@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #10191e; color: #e5eae7; font-family: system-ui, sans-serif; }
+main { width: min(100% - 24px, 528px); margin: 28px auto; }
+header { margin-bottom: 20px; }
+header span { color: #9dab9d; font-size: 11px; letter-spacing: 2px; }
+h1 { font-size: 32px; letter-spacing: -1px; margin: 6px 0; }
+header p { color: #9eabae; font-size: 14px; margin: 0; }
+#game { width: 100%; aspect-ratio: 528 / 680; overflow: hidden; border-radius: 8px; box-shadow: 0 12px 40px #0004; }
+canvas { display: block; }
+.controls { color: #9eabae; text-align: center; font-size: 11px; line-height: 2; }
+.controls b { color: #cdd8d3; font-size: 10px; letter-spacing: .5px; }
+.controls i { margin: 0 8px; font-style: normal; }

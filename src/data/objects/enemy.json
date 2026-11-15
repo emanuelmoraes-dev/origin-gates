@@ -1,0 +1,6 @@
+{
+  "id": "enemy",
+  "name": "Guardião",
+  "maxHp": 100,
+  "color": "#f39b38"
+}

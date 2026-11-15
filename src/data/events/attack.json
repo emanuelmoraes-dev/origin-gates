@@ -1,0 +1,18 @@
+{
+  "id": "attack",
+  "conditions": ["actorAlive", "targetAlive", "adjacent"],
+  "outcomes": [
+    {
+      "id": "hit",
+      "weight": 1,
+      "operations": [{ "type": "damage", "amount": 10 }],
+      "feedback": { "color": "#ef5350", "durationMs": 500, "message": "Acerto! O guardião perdeu 10 HP." }
+    },
+    {
+      "id": "dodge",
+      "weight": 1,
+      "operations": [],
+      "feedback": { "color": "#ffffff", "durationMs": 500, "message": "Esquiva! O guardião evitou o ataque." }
+    }
+  ]
+}
