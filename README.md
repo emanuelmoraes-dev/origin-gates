@@ -26,10 +26,11 @@ npm run build
 - `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
 - `src/data/events/attack.json`: condições, pesos dos resultados, operações de dano e feedback visual. Pesos iguais dão 50% para cada resultado. Cores usam hexadecimal e duração usa milissegundos.
 - `src/data/objects/social.json`: definições dos dois representantes e dois tipos de alvo.
-- `src/data/missions.json`: facção contratante/adversária, representante, definição e posição fixa do alvo e eventos de interação de cada missão.
+- `src/data/missions.json`: facção contratante/adversária, representante, definição e posição fixa do alvo.
 - `src/data/scenarios.json`: nomes do seletor, posições iniciais, relações iniciais, missões e eventos reativos de cada cenário. O mapa continua exclusivamente em TypeScript.
 - `src/data/events/social.json`: aceitação, entrega, reação à morte, limite mínimo de relação, alterações de relações, faixas de recompensa e teto de dano.
 - `src/game/world.ts`: cria partidas isoladas, encontra interações declaradas e avalia reações sobre o estado atual. Compartilha o interpretador de eventos com o combate.
+- `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).
 - `src/game/state.ts`: mapa fixo de 10 × 10 em TypeScript (`L` terra; `W` água), criação do estado e regras de movimento.
 - `src/game/events.ts`: interpretador sem imports de Phaser. Avalia condições, sorteia um resultado por peso, executa operações reutilizáveis e devolve resultado estruturado. A fonte aleatória é injetável para testes. Eventos com as mesmas operações podem ser adicionados em JSON, sem uma função específica por evento.
 - `src/render/OriginScene.ts`: posições iniciais, desenho do mapa, entrada de teclado, painéis e flashes de 500 ms. A função de desenho recebe `WorldMap`; um gerador futuro pode fornecer essa mesma estrutura sem alterar o desenho.

@@ -25,7 +25,7 @@ export interface EventDefinition {
   }[];
 }
 export type EventResult =
-  | { executed: false; reason: BasicCondition | 'compare' | 'missionStatus' | 'noActiveMission'; message?: string }
+  | { executed: false; reason: BasicCondition | 'compare' | 'missionStatus' | 'noActiveMission' | 'noApplicableEvent'; message?: string }
   | { executed: true; eventId: string; outcomeId: string; damage: number; targetHp: number; killed: boolean; feedback: Feedback };
 
 export interface EventContext { world: GameState; mission: MissionDefinition }

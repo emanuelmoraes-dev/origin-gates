@@ -4,27 +4,37 @@
     "name": "Oficial",
     "maxHp": 100,
     "color": "#4499ee",
-    "attackable": false
+    "attackable": false,
+    "interactions": [
+      { "event": "accept", "context": { "mission": "governmentMission" } },
+      { "event": "deliver", "context": { "mission": "governmentMission" } }
+    ]
   },
   "resistanceRepresentative": {
     "id": "resistanceRepresentative",
     "name": "Rebelde",
     "maxHp": 100,
     "color": "#b47bea",
-    "attackable": false
+    "attackable": false,
+    "interactions": [
+      { "event": "accept", "context": { "mission": "resistanceMission" } },
+      { "event": "deliver", "context": { "mission": "resistanceMission" } }
+    ]
   },
   "resistanceTarget": {
     "id": "resistanceTarget",
     "name": "Alvo rebelde",
     "maxHp": 100,
     "color": "#ce80bc",
-    "attackable": true
+    "attackable": true,
+    "interactions": [{ "event": "attack" }]
   },
   "governmentTarget": {
     "id": "governmentTarget",
     "name": "Alvo governo",
     "maxHp": 100,
     "color": "#69b8d4",
-    "attackable": true
+    "attackable": true,
+    "interactions": [{ "event": "attack" }]
   }
 }

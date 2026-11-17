@@ -9,11 +9,7 @@
     "spawn": {
       "x": 8,
       "y": 3
-    },
-    "interactions": [
-      "accept",
-      "deliver"
-    ]
+    }
   },
   {
     "id": "resistanceMission",
@@ -25,10 +21,6 @@
     "spawn": {
       "x": 8,
       "y": 8
-    },
-    "interactions": [
-      "accept",
-      "deliver"
-    ]
+    }
   }
 ]

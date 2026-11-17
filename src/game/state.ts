@@ -1,4 +1,13 @@
 export interface Position { x: number; y: number }
+export interface InteractionBinding {
+  readonly event: string;
+  readonly context?: { readonly mission: string };
+}
+export interface EntitySpawn {
+  object: string;
+  position: Position;
+  interactions?: readonly InteractionBinding[];
+}
 export interface ObjectDefinition {
   readonly id: string;
   readonly name: string;
@@ -6,19 +15,21 @@ export interface ObjectDefinition {
   readonly color: string;
   readonly damage?: number;
   readonly attackable?: boolean;
+  readonly interactions?: readonly InteractionBinding[];
 }
 export interface EntityState {
   readonly definition: ObjectDefinition;
   position: Position;
   hp: number;
   attributes: Record<string, number>;
+  interactions?: readonly InteractionBinding[];
 }
 export type Tile = 'land' | 'water';
 export type WorldMap = readonly (readonly Tile[])[];
 export type MissionStatus = 'available' | 'active' | 'ready' | 'completed';
 export interface MissionDefinition {
   id: string; name: string; faction: string; opponent: string;
-  representative: string; target: string; spawn: Position; interactions: string[];
+  representative: string; target: string; spawn: Position;
 }
 export interface MissionState { status: MissionStatus; target?: EntityState }
 export interface GameState {
@@ -45,8 +56,8 @@ export const worldMap: WorldMap = [
   'LLLLLLLLLL',
 ].map(row => [...row].map(tile => tile === 'L' ? 'land' : 'water'));
 
-export function createEntity(definition: ObjectDefinition, position: Position): EntityState {
-  return { definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 } };
+export function createEntity(definition: ObjectDefinition, position: Position, interactions?: readonly InteractionBinding[]): EntityState {
+  return { definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions };
 }
 
 export function isAdjacent(a: EntityState, b: EntityState): boolean {

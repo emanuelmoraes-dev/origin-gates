@@ -6,7 +6,8 @@ import scenarios from '../data/scenarios.json';
 import attack from '../data/events/attack.json';
 import socialEvents from '../data/events/social.json';
 import { executeEvent, matches, type EventDefinition, type EventResult } from './events';
-import { createEntity, isAdjacent, type EntityState, type GameState } from './state';
+import { createEntity, isAdjacent, type EntitySpawn, type EntityState, type GameState } from './state';
+import { selectInteraction } from './interactions';
 
 export { scenarios };
 export const events = { attack, ...socialEvents } as Record<string, EventDefinition>;
@@ -17,7 +18,7 @@ export function createWorld(scenarioId: string): GameState {
   const missionDefinitions = missions.filter(mission => scenario.missions.some(id => id === mission.id));
   return {
     scenario: scenarioId, player: createEntity(player, scenario.player),
-    entities: scenario.entities.map(item => createEntity(objectDefinitions[item.object as keyof typeof objectDefinitions], item.position)),
+    entities: scenario.entities.map((item: EntitySpawn) => createEntity(objectDefinitions[item.object as keyof typeof objectDefinitions], item.position, item.interactions)),
     relations: { ...scenario.relations } as Record<string, number>,
     missions: Object.fromEntries(missionDefinitions.map(mission => [mission.id, { status: 'available' }])),
     missionDefinitions, objectDefinitions,
@@ -43,13 +44,9 @@ export function react(world: GameState, definitions = events): EventResult[] {
 }
 
 export function interact(world: GameState, target: EntityState, random = Math.random, definitions = events): EventResult {
-  const mission = world.missionDefinitions.find(item => item.representative === target.definition.id);
-  if (mission) {
-    const context = { world, mission };
-    const event = mission.interactions.map(id => definitions[id]).find(event => (event.when ?? []).every(condition => matches(condition, world.player, target, context)));
-    if (event) return executeEvent(event, world.player, target, random, context);
-  }
-  return executeEvent(definitions.attack, world.player, target, random);
+  const selected = selectInteraction(world, target, definitions);
+  if (!selected) return { executed: false, reason: 'noApplicableEvent', message: 'Nenhuma interação disponível.' };
+  return executeEvent(selected.event, world.player, target, random, selected.context);
 }
 
 export function adjacentEntities(world: GameState): EntityState[] {
