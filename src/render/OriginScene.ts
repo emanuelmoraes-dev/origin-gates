@@ -1,15 +1,11 @@
 import Phaser from 'phaser';
-import playerDefinition from '../data/objects/player.json';
-import enemyDefinition from '../data/objects/enemy.json';
-import attackData from '../data/events/attack.json';
-import { executeEvent, type EventDefinition } from '../game/events';
-import { createEntity, isAdjacent, movePlayer, worldMap, type EntityState, type WorldMap } from '../game/state';
+import { adjacentEntities, createWorld, interact, react } from '../game/world';
+import { movePlayer, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
 
 const TILE = 48;
 const MAP_X = 24;
 const MAP_Y = 128;
 const color = (value: string) => Phaser.Display.Color.HexStringToColor(value).color;
-const attack = attackData as EventDefinition;
 
 // Rendering consumes a map; it does not know how the map was produced.
 function drawMap(graphics: Phaser.GameObjects.Graphics, map: WorldMap) {
@@ -24,30 +20,32 @@ function drawMap(graphics: Phaser.GameObjects.Graphics, map: WorldMap) {
 }
 
 export class OriginScene extends Phaser.Scene {
-  private player!: EntityState;
-  private enemy!: EntityState;
-  private playerCircle!: Phaser.GameObjects.Arc;
-  private enemyCircle!: Phaser.GameObjects.Arc;
+  private world!: GameState;
+  private scenarioId = 'training';
+  private circles = new Map<EntityState, Phaser.GameObjects.Arc>();
+  private flashes = new Map<EntityState, Phaser.Time.TimerEvent>();
   private hud!: Phaser.GameObjects.Graphics;
   private playerLabel!: Phaser.GameObjects.Text;
   private enemyLabel!: Phaser.GameObjects.Text;
   private message!: Phaser.GameObjects.Text;
-  private flash?: Phaser.Time.TimerEvent;
+  private socialLabel!: Phaser.GameObjects.Text;
 
   constructor() { super('origin'); }
 
+  init(data: { scenario?: string }) { this.scenarioId = data.scenario ?? this.scenarioId; }
+
   create() {
-    this.player = createEntity(playerDefinition, { x: 2, y: 5 });
-    this.enemy = createEntity(enemyDefinition, { x: 5, y: 5 });
+    this.world = createWorld(this.scenarioId);
+    this.focused = undefined;
+    this.circles.clear();
     drawMap(this.add.graphics(), worldMap);
-    const circle = (entity: EntityState) => this.add.circle(0, 0, 15, color(entity.definition.color)).setStrokeStyle(3, 0x182329, 0.5);
-    this.playerCircle = circle(this.player);
-    this.enemyCircle = circle(this.enemy);
     this.hud = this.add.graphics();
     const style = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#f0f2ef', lineSpacing: 21 };
     this.playerLabel = this.add.text(90, 27, '', style);
     this.enemyLabel = this.add.text(348, 27, '', style);
     this.message = this.add.text(24, 625, 'Aproxime-se do guardião para atacar.', { ...style, fontSize: '13px', wordWrap: { width: 480 } });
+    this.message.setText(this.scenarioId === 'training' ? 'Aproxime-se do guardião para atacar.' : 'Azul: governo · Roxo: resistência. Espaço para interagir.');
+    this.socialLabel = this.add.text(24, 685, '', { ...style, fontSize: '13px', lineSpacing: 7, wordWrap: { width: 480 } });
     this.refresh();
 
     const keyboard = this.input.keyboard!;
@@ -62,7 +60,8 @@ export class OriginScene extends Phaser.Scene {
       if (key === 'r') { this.scene.restart(); return; }
       const direction = directions[key];
       if (direction) {
-        movePlayer(this.player, ...direction, worldMap, [this.enemy]);
+        this.focused = this.world.entities.find(entity => entity.hp > 0 && entity.position.x === this.world.player.position.x + direction[0] && entity.position.y === this.world.player.position.y + direction[1]);
+        movePlayer(this.world.player, ...direction, worldMap, this.world.entities);
         this.refresh();
       }
       if (event.code === 'Space') this.runEvent();
@@ -70,28 +69,51 @@ export class OriginScene extends Phaser.Scene {
     keyboard.on('keydown', onKey);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       keyboard.off('keydown', onKey);
-      this.flash?.remove();
-      this.flash = undefined;
+      for (const timer of this.flashes.values()) timer.remove();
+      this.flashes.clear();
     });
   }
 
   private runEvent() {
-    const result = executeEvent(attack, this.player, this.enemy);
-    if (!result.executed) {
-      this.message.setText(this.enemy.hp <= 0 ? 'O guardião já foi derrotado. R para reiniciar.' : 'Chegue a um tile ao lado do guardião.');
+    const targets = adjacentEntities(this.world);
+    if (!targets.length) {
+      this.message.setText('Aproxime-se de um personagem para interagir. R reinicia.');
       return;
     }
-    this.flash?.remove();
-    this.enemyCircle.setFillStyle(color(result.feedback.color));
-    this.message.setText(result.killed ? 'Guardião derrotado! R para uma nova partida.' : result.feedback.message);
-    this.flash = this.time.delayedCall(result.feedback.durationMs, () => {
-      this.enemyCircle.setFillStyle(color(this.enemy.definition.color));
-    });
+    // When several NPCs are adjacent, arrows/WASD choose the intended one.
+    const target = targets.find(entity => entity === this.focused) ?? targets[0];
+    const result = interact(this.world, target);
+    if (!result.executed) {
+      this.message.setText(result.message ?? 'Não é possível atacar este personagem.');
+      return;
+    }
+    const circle = this.circles.get(target)!;
+    if (result.feedback.durationMs > 0) {
+      this.flashes.get(target)?.remove();
+      circle.setFillStyle(color(result.feedback.color));
+      this.flashes.set(target, this.time.delayedCall(result.feedback.durationMs, () => {
+        circle.setFillStyle(color(target.definition.color));
+        this.flashes.delete(target);
+      }));
+    }
+    this.message.setText(result.killed ? 'Guardião derrotado! R para uma nova partida.' : result.feedback.message + (result.damage ? ` −${result.damage} HP` : ''));
+    for (const reaction of react(this.world)) if (reaction.executed) this.message.setText(reaction.feedback.message);
     this.refresh();
   }
 
+  private focused?: EntityState;
+
   private refresh() {
-    for (const [entity, circle] of [[this.player, this.playerCircle], [this.enemy, this.enemyCircle]] as const) {
+    const entities = [this.world.player, ...this.world.entities];
+    for (const [entity, circle] of this.circles) {
+      if (!entities.includes(entity)) { circle.destroy(); this.circles.delete(entity); }
+    }
+    for (const entity of entities) {
+      let circle = this.circles.get(entity);
+      if (!circle) {
+        circle = this.add.circle(0, 0, 15, color(entity.definition.color)).setStrokeStyle(3, 0x182329, 0.5);
+        this.circles.set(entity, circle);
+      }
       circle.setPosition(MAP_X + entity.position.x * TILE + TILE / 2, MAP_Y + entity.position.y * TILE + TILE / 2);
       circle.setVisible(entity.hp > 0);
     }
@@ -106,7 +128,18 @@ export class OriginScene extends Phaser.Scene {
       this.hud.fillStyle(0x77cf75).fillRect(x + 62, 54, 154 * entity.hp / entity.definition.maxHp, 8);
       label.setText(`${entity.definition.name}\n${entity.hp} / ${entity.definition.maxHp} HP`);
     };
-    panel(this.player, 28, this.playerLabel, true);
-    panel(this.enemy, 286, this.enemyLabel, this.enemy.hp > 0 && isAdjacent(this.player, this.enemy));
+    panel(this.world.player, 28, this.playerLabel, true);
+    const nearby = adjacentEntities(this.world);
+    const target = nearby.find(entity => entity === this.focused) ?? nearby[0];
+    this.enemyLabel.setVisible(false);
+    if (target) panel(target, 286, this.enemyLabel, true);
+    this.socialLabel.setVisible(this.scenarioId !== 'training');
+    const mission = this.world.missionDefinitions.find(item => ['active', 'ready'].includes(this.world.missions[item.id].status));
+    const state = mission && this.world.missions[mission.id];
+    this.socialLabel.setText([
+      `Dano: ${this.world.player.attributes.damage}   |   Governo: ${this.world.relations.government}   |   Resistência: ${this.world.relations.resistance}`,
+      mission ? `${mission.name} — ${state!.status === 'ready' ? 'pronta para entrega (ready)' : 'ativa (active)'}` : 'Missão: nenhuma ativa',
+      mission && state!.status === 'active' ? `Alvo em (${mission.spawn.x + 1}, ${mission.spawn.y + 1}) · coluna, linha` : 'Volte ao representante ou aceite uma nova missão.',
+    ]);
   }
 }

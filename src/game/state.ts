@@ -4,14 +4,32 @@ export interface ObjectDefinition {
   readonly name: string;
   readonly maxHp: number;
   readonly color: string;
+  readonly damage?: number;
+  readonly attackable?: boolean;
 }
 export interface EntityState {
   readonly definition: ObjectDefinition;
   position: Position;
   hp: number;
+  attributes: Record<string, number>;
 }
 export type Tile = 'land' | 'water';
 export type WorldMap = readonly (readonly Tile[])[];
+export type MissionStatus = 'available' | 'active' | 'ready' | 'completed';
+export interface MissionDefinition {
+  id: string; name: string; faction: string; opponent: string;
+  representative: string; target: string; spawn: Position; interactions: string[];
+}
+export interface MissionState { status: MissionStatus; target?: EntityState }
+export interface GameState {
+  scenario: string;
+  player: EntityState;
+  entities: EntityState[];
+  relations: Record<string, number>;
+  missions: Record<string, MissionState>;
+  missionDefinitions: readonly MissionDefinition[];
+  objectDefinitions: Readonly<Record<string, ObjectDefinition>>;
+}
 
 // Source of the map can change without changing movement or rendering.
 export const worldMap: WorldMap = [
@@ -28,7 +46,7 @@ export const worldMap: WorldMap = [
 ].map(row => [...row].map(tile => tile === 'L' ? 'land' : 'water'));
 
 export function createEntity(definition: ObjectDefinition, position: Position): EntityState {
-  return { definition, position: { ...position }, hp: definition.maxHp };
+  return { definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 } };
 }
 
 export function isAdjacent(a: EntityState, b: EntityState): boolean {

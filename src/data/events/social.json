@@ -1,0 +1,177 @@
+{
+  "accept": {
+    "id": "accept",
+    "when": [
+      {
+        "type": "missionStatus",
+        "statuses": [
+          "available",
+          "completed"
+        ]
+      }
+    ],
+    "conditions": [
+      "actorAlive",
+      "targetAlive",
+      "adjacent",
+      {
+        "type": "noActiveMission",
+        "message": "Entregue a missão atual antes de aceitar outra."
+      },
+      {
+        "type": "compare",
+        "left": {
+          "source": "relation",
+          "faction": "faction"
+        },
+        "operator": "gte",
+        "right": 20,
+        "message": "Missão recusada: relação com a facção abaixo de 20."
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "accepted",
+        "weight": 1,
+        "operations": [
+          {
+            "type": "spawnTarget"
+          },
+          {
+            "type": "missionStatus",
+            "status": "active"
+          }
+        ],
+        "feedback": {
+          "color": "#ffffff",
+          "durationMs": 0,
+          "message": "Missão aceita! Encontre o alvo indicado no mapa."
+        }
+      }
+    ]
+  },
+  "deliver": {
+    "id": "deliver",
+    "when": [
+      {
+        "type": "missionStatus",
+        "statuses": [
+          "active",
+          "ready"
+        ]
+      }
+    ],
+    "conditions": [
+      "actorAlive",
+      "targetAlive",
+      "adjacent",
+      {
+        "type": "missionStatus",
+        "statuses": [
+          "ready"
+        ],
+        "message": "O alvo ainda está vivo. Elimine-o antes de voltar."
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "completed",
+        "weight": 1,
+        "operations": [
+          {
+            "type": "relation",
+            "faction": "faction",
+            "amount": 20,
+            "min": 0,
+            "max": 100
+          },
+          {
+            "type": "relation",
+            "faction": "opponent",
+            "amount": -15,
+            "min": 0,
+            "max": 100
+          },
+          {
+            "type": "attributeReward",
+            "key": "damage",
+            "value": {
+              "source": "relation",
+              "faction": "faction"
+            },
+            "bands": [
+              {
+                "min": 0,
+                "max": 29,
+                "amount": 1
+              },
+              {
+                "min": 30,
+                "max": 59,
+                "amount": 3
+              },
+              {
+                "min": 60,
+                "max": 79,
+                "amount": 5
+              },
+              {
+                "min": 80,
+                "max": 100,
+                "amount": 10
+              }
+            ],
+            "max": 50
+          },
+          {
+            "type": "missionStatus",
+            "status": "completed"
+          }
+        ],
+        "feedback": {
+          "color": "#ffffff",
+          "durationMs": 0,
+          "message": "Missão entregue! Relações e dano atualizados. Você pode aceitar outra missão."
+        }
+      }
+    ]
+  },
+  "targetDefeated": {
+    "id": "targetDefeated",
+    "when": [
+      {
+        "type": "missionStatus",
+        "statuses": [
+          "active"
+        ]
+      }
+    ],
+    "conditions": [
+      {
+        "type": "compare",
+        "left": {
+          "source": "missionTargetHp"
+        },
+        "operator": "lte",
+        "right": 0
+      }
+    ],
+    "outcomes": [
+      {
+        "id": "ready",
+        "weight": 1,
+        "operations": [
+          {
+            "type": "missionStatus",
+            "status": "ready"
+          }
+        ],
+        "feedback": {
+          "color": "#ffffff",
+          "durationMs": 0,
+          "message": "Alvo eliminado! Volte ao representante para entregar a missão."
+        }
+      }
+    ]
+  }
+}

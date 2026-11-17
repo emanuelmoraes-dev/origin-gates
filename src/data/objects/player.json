@@ -2,5 +2,6 @@
   "id": "player",
   "name": "Explorador",
   "maxHp": 100,
+  "damage": 10,
   "color": "#f5d547"
 }

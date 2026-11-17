@@ -1,12 +1,12 @@
 {
   "id": "attack",
-  "conditions": ["actorAlive", "targetAlive", "adjacent"],
+  "conditions": ["actorAlive", "targetAlive", "adjacent", "targetAttackable"],
   "outcomes": [
     {
       "id": "hit",
       "weight": 1,
-      "operations": [{ "type": "damage", "amount": 10 }],
-      "feedback": { "color": "#ef5350", "durationMs": 500, "message": "Acerto! O guardião perdeu 10 HP." }
+      "operations": [{ "type": "damage", "amount": { "source": "attribute", "key": "damage" } }],
+      "feedback": { "color": "#ef5350", "durationMs": 500, "message": "Acerto!" }
     },
     {
       "id": "dodge",

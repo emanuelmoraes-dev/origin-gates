@@ -1,0 +1,57 @@
+[
+  {
+    "id": "training",
+    "name": "01 — Campo de treinamento",
+    "player": {
+      "x": 2,
+      "y": 5
+    },
+    "entities": [
+      {
+        "object": "enemy",
+        "position": {
+          "x": 5,
+          "y": 5
+        }
+      }
+    ],
+    "relations": {},
+    "missions": [],
+    "reactions": []
+  },
+  {
+    "id": "rivals",
+    "name": "02 — Lealdades rivais",
+    "player": {
+      "x": 2,
+      "y": 5
+    },
+    "entities": [
+      {
+        "object": "governmentRepresentative",
+        "position": {
+          "x": 3,
+          "y": 2
+        }
+      },
+      {
+        "object": "resistanceRepresentative",
+        "position": {
+          "x": 5,
+          "y": 2
+        }
+      }
+    ],
+    "relations": {
+      "government": 50,
+      "resistance": 50
+    },
+    "missions": [
+      "governmentMission",
+      "resistanceMission"
+    ],
+    "reactions": [
+      "targetDefeated"
+    ]
+  }
+]

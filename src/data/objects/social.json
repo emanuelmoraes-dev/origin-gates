@@ -1,0 +1,30 @@
+{
+  "governmentRepresentative": {
+    "id": "governmentRepresentative",
+    "name": "Oficial",
+    "maxHp": 100,
+    "color": "#4499ee",
+    "attackable": false
+  },
+  "resistanceRepresentative": {
+    "id": "resistanceRepresentative",
+    "name": "Rebelde",
+    "maxHp": 100,
+    "color": "#b47bea",
+    "attackable": false
+  },
+  "resistanceTarget": {
+    "id": "resistanceTarget",
+    "name": "Alvo rebelde",
+    "maxHp": 100,
+    "color": "#ce80bc",
+    "attackable": true
+  },
+  "governmentTarget": {
+    "id": "governmentTarget",
+    "name": "Alvo governo",
+    "maxHp": 100,
+    "color": "#69b8d4",
+    "attackable": true
+  }
+}
