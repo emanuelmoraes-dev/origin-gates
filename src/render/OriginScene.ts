@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { adjacentEntities, createWorld, interact, react } from '../game/world';
-import { movePlayer, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
+import { movePlayer, resolve, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
 
 const TILE = 48;
 const MAP_X = 24;
@@ -134,12 +134,14 @@ export class OriginScene extends Phaser.Scene {
     this.enemyLabel.setVisible(false);
     if (target) panel(target, 286, this.enemyLabel, true);
     this.socialLabel.setVisible(this.scenarioId !== 'training');
-    const mission = this.world.missionDefinitions.find(item => ['active', 'ready'].includes(this.world.missions[item.id].status));
-    const state = mission && this.world.missions[mission.id];
+    const missions = this.world.missions.filter(item => item.status === 'active' || item.status === 'ready');
     this.socialLabel.setText([
-      `Dano: ${this.world.player.attributes.damage}   |   Governo: ${this.world.relations.government}   |   Resistência: ${this.world.relations.resistance}`,
-      mission ? `${mission.name} — ${state!.status === 'ready' ? 'pronta para entrega (ready)' : 'ativa (active)'}` : 'Missão: nenhuma ativa',
-      mission && state!.status === 'active' ? `Alvo em (${mission.spawn.x + 1}, ${mission.spawn.y + 1}) · coluna, linha` : 'Volte ao representante ou aceite uma nova missão.',
+      `Dano: ${this.world.player.attributes.damage} | ${this.world.factions.map(f => `${f.name}: ${this.world.relations[f.id]}`).join(' | ')}`,
+      ...missions.map(mission => {
+        const target = resolve(this.world, mission.targetId, 'character');
+        return `${mission.name} — ${mission.status === 'ready' ? 'pronta (ready)' : `ativa (${target.position.x + 1}, ${target.position.y + 1})`}`;
+      }),
+      ...(missions.length ? [] : ['Missão: nenhuma ativa']),
     ]);
   }
 }

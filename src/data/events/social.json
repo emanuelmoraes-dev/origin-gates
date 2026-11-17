@@ -5,8 +5,7 @@
       {
         "type": "missionStatus",
         "statuses": [
-          "available",
-          "completed"
+          "available"
         ]
       }
     ],
@@ -16,7 +15,7 @@
       "adjacent",
       {
         "type": "noActiveMission",
-        "message": "Entregue a missão atual antes de aceitar outra."
+        "message": "Entregue a missão pendente deste representante antes de aceitar outra."
       },
       {
         "type": "compare",

@@ -1,51 +1,80 @@
-# Contrato da engine — 0.2.1
+# Contrato da engine — 0.2.2
 
-## Participantes e seleção
+## Definições, identidade e estado
 
-`OriginScene` escolhe uma instância viva e adjacente: a entidade apontada pelo teclado tem preferência; caso contrário, usa a primeira na ordem de `world.entities`. Espaço chama `interact(world, target)`. Esse comportamento visual não mudou.
+Definições JSON possuem `id` reutilizável; instâncias possuem `id` único, `definitionId` e `kind`. O contador `nextId` da partida produz `entity_000001`, `entity_000002`, etc., para todos os tipos. Nenhum comportamento é inferido do texto do ID. Reiniciar ou trocar cenário cria outro registro e reinicia o contador; IDs não identificam entidades entre partidas.
 
-O ator é sempre `world.player`; o alvo é exatamente a instância recebida, não a definição JSON, nem o alvo de uma missão inferido. `selectInteraction` lê `target.interactions`, se definido; caso contrário, lê `target.definition.interactions`. A lista da instância **substitui** a da definição, inclusive se for `[]`. Lista ausente equivale a `[]`.
+`world.instances` é o registro canônico, indexado por ID de instância. `resolve(store, id, kind)` retorna a entidade concreta e verifica existência e tipo; um ID de definição não substitui uma referência de instância. IDs são readonly no contrato TypeScript e não são reassociados durante a execução.
 
-Cada associação referencia um evento do registro por chave. Percorre-se a lista na ordem declarada, da primeira para a última. O primeiro evento cujo `when` seja satisfeito é escolhido. A ordem das chaves do registro, o identificador e os pesos dos resultados não determinam prioridade. A seleção não sorteia resultados nem modifica estado.
+Os tipos compartilham somente identidade. Personagens têm HP, posição, atributos e referências opcionais `factionId` e `offer`. Facções têm nome, sem HP/posição. Missões têm estado e participantes, sem HP/posição. `world.missions` e `world.factions` são visões derivadas do registro, sem cópias de estado; `player` e `entities` referenciam os mesmos personagens registrados. Personagens mortos permanecem registrados, invisíveis e sem colisão, preservando referências históricas.
 
-`interact` executa somente o evento selecionado. Se não existir um aplicável, retorna `{ executed: false, reason: 'noApplicableEvent', message: 'Nenhuma interação disponível.' }`, sem sorteio, operações ou ataque implícito. Referência de evento ou missão inexistente é erro de configuração e lança exceção; não é ausência de evento aplicável.
+`createEntity(definition, position, store, interactions?)` cria e registra um personagem, copiando posição e atributos. Todas as criações da mesma partida usam o mesmo store. A definição e suas listas não são modificadas. Não há ECS ou propriedades artificiais de personagem nas facções e missões.
 
-## Associação JSON e contexto
+## Configuração inicial e referências
 
-Em uma definição de objeto (`src/data/objects/*.json`):
+`factions.json` define as facções reutilizáveis. `scenarios.json.factions` informa `definition` e `relation` inicial. `createWorld` instancia cada facção e traduz referências de configuração (`entities[].faction` e `offer.opponent`) para IDs concretos. Neste MVP, uma definição de facção aparece uma única vez por cenário; duplicações são rejeitadas. Personagens e missões não têm essa restrição.
+
+Cada representante recebe `factionId`. As relações do único jogador ficam exclusivamente em `world.relations[factionInstanceId]`; não são copiadas para personagens ou missões. A facção contratante é resolvida por `mission.contractorId → character.factionId → faction`. A adversária é `mission.opponentId`. Não há troca de facção durante uma missão.
+
+IDs de definição ainda são usados para escolher o modelo de uma nova entidade. Depois da criação, referências entre entidades usam IDs de instância. Referências inexistentes, tipo incorreto, contexto de outro executor/contratante e alvos não registrados geram erro, sem fallback para outra entidade. Não há busca de alvo por definição.
+
+## Ofertas e instâncias de missão
+
+Existe uma única definição em `missions.json`:
 
 ```json
 {
-  "id": "governmentRepresentative",
-  "name": "Oficial",
-  "maxHp": 100,
-  "color": "#4499ee",
-  "attackable": false,
+  "id": "eliminateTarget",
+  "name": "Eliminar alvo",
+  "initialStatus": "active",
+  "reactions": ["targetDefeated"]
+}
+```
+
+A definição declara o estado inicial e as reações comuns; `scenarios[].missions` habilita definições, sem criar missões antecipadamente. A oferta no objeto representante fornece as particularidades:
+
+```json
+{
+  "offer": {
+    "mission": "eliminateTarget",
+    "name": "Eliminar alvo rebelde",
+    "target": "resistanceTarget",
+    "opponent": "resistance",
+    "spawn": { "x": 8, "y": 3 }
+  },
   "interactions": [
-    { "event": "accept", "context": { "mission": "governmentMission" } },
-    { "event": "deliver", "context": { "mission": "governmentMission" } }
+    { "event": "accept", "context": { "offer": "target" } },
+    { "event": "deliver", "context": { "offer": "target" } }
   ]
 }
 ```
 
-Para combate, basta `"interactions": [{ "event": "attack" }]`. O ataque agora é uma associação explícita do guardião e dos dois tipos de alvo. `attackable` continua sendo validação de ataque, não uma regra de seleção.
+`offer.target` é definição de NPC; `offer.mission` é definição de missão. Na instância do representante, a oferta copia a configuração e troca `opponent` por `opponentId` concreto. A aceitação válida usa a operação existente `spawnTarget`, agora responsável por criar o par alvo/missão: gera o NPC, gera a missão com ID próprio, registra `executorId`, `contractorId`, `targetId`, `opponentId`, nome e estado inicial, e adiciona o NPC ao mapa. Atualiza apenas o contexto dessa execução com o novo `missionId`, permitindo que a operação seguinte `missionStatus` continue funcionando. Nenhum tipo de operação novo foi introduzido.
 
-Uma entrada de `entities` em `scenarios.json` pode fornecer `interactions` no mesmo formato, junto a `object` e `position`. `createWorld` passa essa substituição para `createEntity`. Instâncias criadas por `spawnTarget` herdam as associações de sua definição. Definições e listas não são modificadas durante a execução.
+`available` representa uma oferta sem missão pendente, não uma instância pré-criada. Instâncias percorrem `active → ready → completed`. `noActiveMission` verifica pendência do par executor/contratante, incluindo `ready`. Assim, cada representante pode ter uma missão pendente, simultaneamente com o outro. A entrega exige `ready`. Uma nova aceitação cria outra missão e outro alvo; não reinicia a missão concluída, que continua registrada.
 
-`event` é a chave no registro `events`. `context.mission` é um ID explícito de definição de missão presente na partida. O adaptador `resolveContext` resolve esse ID e constrói `{ world, mission }`, preservando as referências ao estado e à definição. Sem `context`, a execução recebe `undefined`, suficiente para os eventos atuais de combate e para regras sem missão. Não existe busca da missão por papel, facção ou identidade do representante durante a interação.
+## Seleção, participantes e execução
 
-O campo `interactions` foi removido de `missions.json`: a associação pertence ao objeto ou à instância que oferece a interação. As missões continuam declarando representante, alvo, facções e posição de criação para os mecanismos já existentes.
+A UI mantém a seleção de entidade viva adjacente: preferência para a apontada pelo teclado e, na ausência, primeira na ordem de `world.entities`. Espaço chama `interact(world, target)`. O ator é `world.player` e o alvo é exatamente a instância registrada recebida.
 
-## `when` e `conditions`
+`selectInteraction` percorre `target.interactions ?? target.definition.interactions ?? []` na ordem declarada. Uma substituição de instância, inclusive `[]`, substitui a lista da definição. Cada `event` referencia uma chave do registro estático. O primeiro evento cujo `when` seja satisfeito vence; a ordem do registro e os pesos dos outcomes não afetam a prioridade. Selecionar não modifica estado nem sorteia resultados.
 
-- `when` seleciona aplicabilidade. Todas as entradas devem ser verdadeiras; ausente ou vazio significa aplicável. Falso faz o seletor tentar a próxima associação, sem mensagem de recusa.
-- `conditions` valida a execução **depois da seleção**. Todas devem ser satisfeitas, em ordem. A primeira falha retorna `executed: false`, o motivo e a mensagem configurada, quando houver. Não se tenta outro evento: uma recusa nunca se transforma em ataque.
-- `executeEvent` também revalida `when` para proteger chamadas diretas. Somente após todas as verificações ele sorteia um `outcome` por `weight` e aplica suas `operations` sequencialmente. `feedback` retorna mensagem, cor e duração para a apresentação.
+`context.offer: "target"` pede ao adaptador que use a oferta do alvo e encontre a missão pendente pelos IDs do jogador e do contratante. O contexto contém `world`, `contractorId`, `offer` e `missionId?`. Não contém uma missão inferida pelo ID de definição do representante. Sem declaração de contexto, combate continua funcionando apenas com ator/alvo.
 
-Exemplo existente: `accept.when` aceita estados `available`/`completed`; `accept.conditions` exige adjacência, ausência de missão pendente e relação suficiente. Relação baixa seleciona `accept`, mas devolve a recusa sem criar alvo. Nos estados `active`/`ready`, seleciona-se `deliver`; alvo vivo produz a mensagem de validação existente.
+- `when`: todas as regras devem ser verdadeiras; ausente/vazio significa aplicável. Falso tenta a próxima associação, sem recusa.
+- `conditions`: após selecionar, valida todas em ordem. Falha retorna motivo/mensagem e não executa operações, sorteio ou outro evento.
+- `outcomes`: resultados sorteados proporcionalmente a `weight`, após a validação.
+- `operations`: transformações executadas sequencialmente. Relações mudam antes da consulta da faixa de recompensa.
+- `feedback`: mensagem, cor e duração para a apresentação.
 
-## Limites deliberados
+`executeEvent` revalida `when` para chamadas diretas e verifica referências do contexto. Uma recusa nunca vira ataque. Sem evento aplicável, retorna `executed: false`, `reason: "noApplicableEvent"`; referências inválidas são erros explícitos de configuração.
 
-Generalizou-se a associação e a escolha; não os conceitos de toda a engine. O contexto ainda possui um adaptador específico de missão, e não um resolvedor arbitrário de variáveis. `missionStatus`, `noActiveMission`, `missionTargetHp`, `spawnTarget`, faixas de recompensa e referências `faction`/`opponent` continuam especializados. Não há novos tipos de operação.
+`react` percorre instâncias de missão, consulta as reações da definição e resolve executor/contratante/alvo pelos IDs. `missionTargetHp` consulta somente `mission.targetId`. Uma morte muda apenas a missão que referencia aquele NPC, mesmo quando dois alvos usam a mesma definição. Não há fila, cascata ou dependência do ID do último ataque.
 
-`react` continua percorrendo missões e resolvendo seu representante, usando os IDs de reação do cenário. A UI ainda conhece HP, dano, relações e missões. O ator continua sendo o jogador e há um único alvo explícito; participantes arbitrários não foram introduzidos. O registro de eventos e a importação dos JSONs continuam estáticos; não há validador completo de schema nem transação com rollback para JSON inválido. Para dados válidos, falhas de condições acontecem antes de qualquer operação.
+## Decisões e limites
+
+Escolheu-se um registro em memória com união discriminada em vez de ECS, banco de dados ou resolvedor universal de referências. Visões derivadas evitam duplicar estado. Ofertas substituem as antigas definições governmentMission/resistanceMission e o contexto por ID de definição; não se mantiveram aliases ambíguos para o formato antigo.
+
+A operação `spawnTarget` preserva o nome e a função de criar o alvo, mas também instancia a missão antes inexistente. Separar essa criação em um sistema genérico de fábricas e encadeamento de referências foi descartado por ampliar o escopo. Combate, relações, faixas e limites de recompensa permanecem nos eventos existentes.
+
+Continuam especializados: adaptador de oferta/missão, `missionStatus`, `noActiveMission`, `missionTargetHp`, `spawnTarget`, papéis `faction/opponent`, relações do único jogador e UI de missões. Atores arbitrários, múltiplas ofertas por representante, mudança de facção, persistência, coleta de histórico, schema completo e rollback transacional não são suportados. Objetos JSON inválidos podem exigir validação adicional antes de operações; não há infraestrutura universal de transações. Identidade entre sessões e retenção de entidades históricas deverão ser avaliadas somente quando houver necessidade concreta.

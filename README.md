@@ -11,7 +11,7 @@ Abra o endereço indicado pelo Vite. Use WASD ou setas para mover um tile por pr
 
 No seletor acima do mapa, escolha **01 — Campo de treinamento** (combate original) ou **02 — Lealdades rivais**. Trocar de cenário ou pressionar R cria uma partida nova, sem persistência. No cenário 02, o jogador começa em (3, 6), o oficial azul em (4, 3) e o representante roxo em (6, 3); coordenadas em coluna/linha, começando em 1.
 
-Chegue ao lado de um representante e pressione Espaço para aceitar sua missão. O alvo só aparece após a aceitação, e o painel informa suas coordenadas. Elimine-o, volte ao mesmo representante e pressione Espaço para entregar. Pressione novamente para repetir com uma nova instância do alvo. Há somente uma missão pendente por vez, incluindo as prontas para entrega. Se houver dois personagens adjacentes, pressione uma direção em direção ao personagem desejado para selecioná-lo antes de usar Espaço.
+Chegue ao lado de um representante e pressione Espaço para aceitar sua missão. O alvo só aparece após a aceitação, e o painel informa suas coordenadas. Elimine-o, volte ao mesmo representante e pressione Espaço para entregar. Pressione novamente para repetir com novas instâncias da missão e do alvo. Há somente uma missão pendente por representante, incluindo as prontas para entrega; governo e resistência podem ter missões simultâneas. Se houver dois personagens adjacentes, pressione uma direção em direção ao personagem desejado para selecioná-lo antes de usar Espaço.
 
 As relações começam em 50/50. Cada entrega soma 20 à facção contratante e subtrai 15 da adversária, limitadas a 0–100. Uma relação abaixo de 20 bloqueia novas missões dessa facção até reiniciar. O bônus de dano considera a relação **após** essa alteração: 0–29 dá +1, 30–59 dá +3, 60–79 dá +5, 80–100 dá +10. O dano começa em 10 e acumula até 50. Os representantes não podem ser atacados.
 
@@ -25,9 +25,10 @@ npm run build
 
 - `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
 - `src/data/events/attack.json`: condições, pesos dos resultados, operações de dano e feedback visual. Pesos iguais dão 50% para cada resultado. Cores usam hexadecimal e duração usa milissegundos.
-- `src/data/objects/social.json`: definições dos dois representantes e dois tipos de alvo.
-- `src/data/missions.json`: facção contratante/adversária, representante, definição e posição fixa do alvo.
-- `src/data/scenarios.json`: nomes do seletor, posições iniciais, relações iniciais, missões e eventos reativos de cada cenário. O mapa continua exclusivamente em TypeScript.
+- `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
+- `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
+- `src/data/factions.json`: definições das facções sem representação no mapa.
+- `src/data/scenarios.json`: nomes do seletor, posições iniciais, facções/relações iniciais e definições de missão habilitadas. O mapa continua exclusivamente em TypeScript.
 - `src/data/events/social.json`: aceitação, entrega, reação à morte, limite mínimo de relação, alterações de relações, faixas de recompensa e teto de dano.
 - `src/game/world.ts`: cria partidas isoladas, encontra interações declaradas e avalia reações sobre o estado atual. Compartilha o interpretador de eventos com o combate.
 - `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).
@@ -45,6 +46,6 @@ A engine preserva as condições originais (`actorAlive`, `targetAlive`, `adjace
 
 As operações são `damage`, `relation` (delta e limites), `attributeReward` (consulta e faixas numéricas), `missionStatus` e `spawnTarget`. O array de operações é executado em ordem: relações são alteradas antes de consultar a faixa de recompensa. O combate consulta `attributes.damage` em ambos os cenários; no treinamento ele permanece em 10.
 
-`when` seleciona qual evento se aplica ao estado atual; `conditions` valida sua execução e pode retornar uma mensagem de recusa. A reação de alvo derrotado consulta a missão ativa e a vida do alvo, sem consultar o identificador de um ataque anterior. Os estados são `available → active → ready → completed`; uma nova aceitação permite `completed → active`. A entrega exige `ready`, impedindo recompensa duplicada.
+`when` seleciona qual evento se aplica ao estado atual; `conditions` valida sua execução e pode retornar uma mensagem de recusa. A reação de alvo derrotado consulta a instância da missão e o ID de seu alvo, sem consultar o identificador de um ataque anterior. `available` indica uma oferta sem missão pendente. As instâncias percorrem `active → ready → completed`; uma nova aceitação cria outra instância. A entrega exige `ready`, impedindo recompensa duplicada.
 
 Os testes originais foram mantidos. Os testes de missões cobrem as duas facções, limites, faixas, repetição, exclusividade, reset e alterações dos próprios dados de evento sem mudar as regras TypeScript.

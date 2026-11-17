@@ -15,9 +15,8 @@
         }
       }
     ],
-    "relations": {},
     "missions": [],
-    "reactions": []
+    "factions": []
   },
   {
     "id": "rivals",
@@ -32,26 +31,30 @@
         "position": {
           "x": 3,
           "y": 2
-        }
+        },
+        "faction": "government"
       },
       {
         "object": "resistanceRepresentative",
         "position": {
           "x": 5,
           "y": 2
-        }
+        },
+        "faction": "resistance"
       }
     ],
-    "relations": {
-      "government": 50,
-      "resistance": 50
-    },
     "missions": [
-      "governmentMission",
-      "resistanceMission"
+      "eliminateTarget"
     ],
-    "reactions": [
-      "targetDefeated"
+    "factions": [
+      {
+        "definition": "government",
+        "relation": 50
+      },
+      {
+        "definition": "resistance",
+        "relation": 50
+      }
     ]
   }
 ]

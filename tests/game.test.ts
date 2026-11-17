@@ -3,11 +3,12 @@ import attackJson from '../src/data/events/attack.json';
 import playerJson from '../src/data/objects/player.json';
 import enemyJson from '../src/data/objects/enemy.json';
 import { executeEvent, type EventDefinition } from '../src/game/events';
-import { createEntity, movePlayer, worldMap } from '../src/game/state';
+import { createEntity, createIdentityStore, movePlayer, worldMap } from '../src/game/state';
 
 const attack = attackJson as EventDefinition;
 function setup() {
-  return { player: createEntity(playerJson, { x: 4, y: 5 }), enemy: createEntity(enemyJson, { x: 5, y: 5 }) };
+  const store = createIdentityStore();
+  return { player: createEntity(playerJson, { x: 4, y: 5 }, store), enemy: createEntity(enemyJson, { x: 5, y: 5 }, store) };
 }
 
 describe('JSON event interpreter (without Phaser)', () => {
@@ -67,7 +68,7 @@ describe('map movement', () => {
     expect(movePlayer(player, 1, 0, worldMap, [enemy])).toBe(true);
   });
   it('blocks water, boundaries and diagonal movement', () => {
-    const player = createEntity(playerJson, { x: 0, y: 0 });
+    const player = createEntity(playerJson, { x: 0, y: 0 }, createIdentityStore());
     expect(movePlayer(player, -1, 0, worldMap, [])).toBe(false);
     expect(movePlayer(player, 0, -1, worldMap, [])).toBe(false);
     expect(movePlayer(player, 1, 1, worldMap, [])).toBe(false);

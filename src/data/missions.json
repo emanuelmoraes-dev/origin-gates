@@ -1,26 +1,10 @@
 [
   {
-    "id": "governmentMission",
-    "name": "Eliminar alvo rebelde",
-    "faction": "government",
-    "opponent": "resistance",
-    "representative": "governmentRepresentative",
-    "target": "resistanceTarget",
-    "spawn": {
-      "x": 8,
-      "y": 3
-    }
-  },
-  {
-    "id": "resistanceMission",
-    "name": "Eliminar alvo governista",
-    "faction": "resistance",
-    "opponent": "government",
-    "representative": "resistanceRepresentative",
-    "target": "governmentTarget",
-    "spawn": {
-      "x": 8,
-      "y": 8
-    }
+    "id": "eliminateTarget",
+    "name": "Eliminar alvo",
+    "initialStatus": "active",
+    "reactions": [
+      "targetDefeated"
+    ]
   }
 ]

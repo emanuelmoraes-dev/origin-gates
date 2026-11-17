@@ -6,9 +6,29 @@
     "color": "#4499ee",
     "attackable": false,
     "interactions": [
-      { "event": "accept", "context": { "mission": "governmentMission" } },
-      { "event": "deliver", "context": { "mission": "governmentMission" } }
-    ]
+      {
+        "event": "accept",
+        "context": {
+          "offer": "target"
+        }
+      },
+      {
+        "event": "deliver",
+        "context": {
+          "offer": "target"
+        }
+      }
+    ],
+    "offer": {
+      "mission": "eliminateTarget",
+      "name": "Eliminar alvo rebelde",
+      "target": "resistanceTarget",
+      "opponent": "resistance",
+      "spawn": {
+        "x": 8,
+        "y": 3
+      }
+    }
   },
   "resistanceRepresentative": {
     "id": "resistanceRepresentative",
@@ -17,9 +37,29 @@
     "color": "#b47bea",
     "attackable": false,
     "interactions": [
-      { "event": "accept", "context": { "mission": "resistanceMission" } },
-      { "event": "deliver", "context": { "mission": "resistanceMission" } }
-    ]
+      {
+        "event": "accept",
+        "context": {
+          "offer": "target"
+        }
+      },
+      {
+        "event": "deliver",
+        "context": {
+          "offer": "target"
+        }
+      }
+    ],
+    "offer": {
+      "mission": "eliminateTarget",
+      "name": "Eliminar alvo governista",
+      "target": "governmentTarget",
+      "opponent": "government",
+      "spawn": {
+        "x": 8,
+        "y": 8
+      }
+    }
   },
   "resistanceTarget": {
     "id": "resistanceTarget",
@@ -27,7 +67,11 @@
     "maxHp": 100,
     "color": "#ce80bc",
     "attackable": true,
-    "interactions": [{ "event": "attack" }]
+    "interactions": [
+      {
+        "event": "attack"
+      }
+    ]
   },
   "governmentTarget": {
     "id": "governmentTarget",
@@ -35,6 +79,10 @@
     "maxHp": 100,
     "color": "#69b8d4",
     "attackable": true,
-    "interactions": [{ "event": "attack" }]
+    "interactions": [
+      {
+        "event": "attack"
+      }
+    ]
   }
 }
