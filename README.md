@@ -1,4 +1,4 @@
-# Origin Gates — MVP 0.2: Lealdades rivais
+# Origin Gates — MVP 0.2.3: Reatividade social
 
 Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
 
@@ -15,6 +15,8 @@ Chegue ao lado de um representante e pressione Espaço para aceitar sua missão.
 
 As relações começam em 50/50. Cada entrega soma 20 à facção contratante e subtrai 15 da adversária, limitadas a 0–100. Uma relação abaixo de 20 bloqueia novas missões dessa facção até reiniciar. O bônus de dano considera a relação **após** essa alteração: 0–29 dá +1, 30–59 dá +3, 60–79 dá +5, 80–100 dá +10. O dano começa em 10 e acumula até 50. Os representantes não podem ser atacados.
 
+No **03 — Reatividade social**, o jogador começa ao lado da vítima. Pressione Espaço: tanto acerto quanto esquiva geram uma tentativa admitida. A fica vermelho e hostil ao agressor; B (amizade fraca), C (sem relação), D (distante) e E (relação na direção inversa) permanecem neutros. O mapa rotula os personagens, e o painel mostra relações direcionais, intensidades e hostilidade. O limiar é 70 e o alcance Manhattan é 3, ambos inclusivos e configuráveis em `src/data/reactions.json`. Não há perseguição ou contra-ataque. R ou a troca de cenário cria uma partida isolada.
+
 ```sh
 npm test
 npm run typecheck
@@ -25,6 +27,10 @@ npm run build
 
 - `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
 - `src/data/events/attack.json`: condições, pesos dos resultados, operações de dano e feedback visual. Pesos iguais dão 50% para cada resultado. Cores usam hexadecimal e duração usa milissegundos.
+- `src/data/objects/reactivity.json`: vítima e definição compartilhada pelos cinco observadores.
+- `src/data/relations.json`: tipos de relação e regras reativas associadas.
+- `src/data/reactions.json`: tipo de fato observado, condições de intensidade/distância e transformação por referências.
+- `src/game/reactions.ts`: despacho síncrono dos fatos usando inscrições por tipo, condições e operações da engine existente.
 - `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
 - `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
 - `src/data/factions.json`: definições das facções sem representação no mapa.
@@ -49,3 +55,5 @@ As operações são `damage`, `relation` (delta e limites), `attributeReward` (c
 `when` seleciona qual evento se aplica ao estado atual; `conditions` valida sua execução e pode retornar uma mensagem de recusa. A reação de alvo derrotado consulta a instância da missão e o ID de seu alvo, sem consultar o identificador de um ataque anterior. `available` indica uma oferta sem missão pendente. As instâncias percorrem `active → ready → completed`; uma nova aceitação cria outra instância. A entrega exige `ready`, impedindo recompensa duplicada.
 
 Os testes originais foram mantidos. Os testes de missões cobrem as duas facções, limites, faixas, repetição, exclusividade, reset e alterações dos próprios dados de evento sem mudar as regras TypeScript.
+
+Os testes de reatividade cobrem fatos admitidos/recusados, direcionalidade, identidades concretas, limites inclusivos, alterações de parâmetros em dados, agressor diferente do jogador, deduplicação e isolamento das partidas. O contrato técnico também registra a futura migração das reações de missão para fatos.

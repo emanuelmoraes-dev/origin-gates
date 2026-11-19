@@ -1,3 +1,5 @@
+import type { Fact, ReactionDefinition } from './events';
+
 export interface Position { x: number; y: number }
 export interface InteractionBinding {
   readonly event: string;
@@ -8,6 +10,8 @@ export interface EntitySpawn {
   position: Position;
   interactions?: readonly InteractionBinding[];
   faction?: string;
+  key?: string;
+  label?: string;
 }
 export interface ObjectDefinition {
   readonly id: string;
@@ -34,6 +38,8 @@ export interface EntityState extends Identity {
   interactions?: readonly InteractionBinding[];
   factionId?: string;
   offer?: MissionOffer;
+  label?: string;
+  references: Record<string, string>;
 }
 export type Tile = 'land' | 'water';
 export type WorldMap = readonly (readonly Tile[])[];
@@ -50,7 +56,15 @@ export interface MissionState extends Identity {
   status: Exclude<MissionStatus, 'available'>;
 }
 export interface FactionState extends Identity { readonly kind: 'faction'; readonly name: string }
-export type WorldInstance = EntityState | MissionState | FactionState;
+export interface RelationDefinition {
+  readonly id: string; readonly name: string; readonly reactions: readonly string[];
+}
+export interface RelationState extends Identity {
+  readonly kind: 'relation'; readonly sourceId: string; readonly targetId: string;
+  intensity: number;
+}
+export interface RelationSpawn { definition: string; source: string; target: string; intensity: number }
+export type WorldInstance = EntityState | MissionState | FactionState | RelationState;
 export interface IdentityStore { nextId: number; instances: Record<string, WorldInstance> }
 export function createIdentityStore(): IdentityStore { return { nextId: 1, instances: {} }; }
 export function identity(store: IdentityStore, definitionId: string): Identity {
@@ -70,6 +84,11 @@ export interface GameState extends IdentityStore {
   readonly factions: readonly FactionState[];
   missionDefinitions: readonly MissionDefinition[];
   objectDefinitions: Readonly<Record<string, ObjectDefinition>>;
+  readonly socialRelations: readonly RelationState[];
+  relationDefinitions: Readonly<Record<string, RelationDefinition>>;
+  reactionDefinitions: Readonly<Record<string, ReactionDefinition>>;
+  factSubscriptions: Record<string, { relationId: string; ruleId: string }[]>;
+  processedFacts: WeakSet<Fact>;
 }
 
 // Source of the map can change without changing movement or rendering.
@@ -88,9 +107,25 @@ export const worldMap: WorldMap = [
 
 export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[]): EntityState {
   if (!definition) throw new Error('Unknown character definition');
-  const entity: EntityState = { ...identity(store, definition.id), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions };
+  const entity: EntityState = { ...identity(store, definition.id), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions, references: {} };
   store.instances[entity.id] = entity;
   return entity;
+}
+
+export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number): RelationState {
+  const definition = world.relationDefinitions[definitionId];
+  if (!definition || !Number.isFinite(intensity)) throw new Error('Invalid relation definition or intensity');
+  resolve(world, sourceId, 'character');
+  resolve(world, targetId, 'character');
+  const rules = [...new Set(definition.reactions)].map(ruleId => {
+    const rule = world.reactionDefinitions[ruleId];
+    if (!rule) throw new Error(`Unknown reaction rule: ${ruleId}`);
+    return { ruleId, on: rule.on };
+  });
+  const relation: RelationState = { ...identity(world, definition.id), kind: 'relation', sourceId, targetId, intensity };
+  world.instances[relation.id] = relation;
+  for (const rule of rules) (world.factSubscriptions[rule.on] ??= []).push({ relationId: relation.id, ruleId: rule.ruleId });
+  return relation;
 }
 
 export function pendingMission(world: GameState, executorId: string, contractorId: string): MissionState | undefined {

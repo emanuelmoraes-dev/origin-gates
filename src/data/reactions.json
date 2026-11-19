@@ -1,0 +1,15 @@
+{
+  "respondToAggression": {
+    "id": "respondToAggression",
+    "on": "attackAttempted",
+    "when": [
+      { "type": "sameInstance", "left": "relation.target", "right": "target" },
+      { "type": "alive", "entity": "relation.source" },
+      { "type": "compare", "left": { "source": "relationIntensity" }, "operator": "gte", "right": 70 },
+      { "type": "compare", "left": { "source": "distance", "from": "relation.source", "to": "target" }, "operator": "lte", "right": 3 }
+    ],
+    "operations": [
+      { "type": "setReference", "entity": "relation.source", "key": "hostileTo", "value": "actor" }
+    ]
+  }
+}

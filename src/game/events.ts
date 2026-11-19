@@ -1,21 +1,30 @@
 import { createEntity, identity, isAdjacent, pendingMission, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
 
 type BasicCondition = 'actorAlive' | 'targetAlive' | 'adjacent' | 'targetAttackable';
-type Value = number | { source: 'attribute'; key: string } | { source: 'relation'; faction: 'faction' | 'opponent' } | { source: 'missionTargetHp' };
+export type CharacterRef = 'actor' | 'target' | 'relation.source' | 'relation.target';
+type Value = number | { source: 'attribute'; key: string } | { source: 'relation'; faction: 'faction' | 'opponent' } | { source: 'missionTargetHp' }
+  | { source: 'relationIntensity' } | { source: 'distance'; from: CharacterRef; to: CharacterRef };
+export interface Fact { readonly type: string; readonly actorId: string; readonly targetId: string }
+export interface ReactionContext { world: GameState; fact: Fact; relationId: string }
+export interface ReactionDefinition { id: string; on: string; when: readonly Condition[]; operations: readonly Operation[] }
 export type Condition = BasicCondition
   | { type: 'compare'; left: Value; operator: 'gte' | 'lte'; right: Value; message?: string }
   | { type: 'missionStatus'; statuses: MissionStatus[]; message?: string }
+  | { type: 'sameInstance'; left: CharacterRef; right: CharacterRef; message?: string }
+  | { type: 'alive'; entity: CharacterRef; message?: string }
   | { type: 'noActiveMission'; message?: string };
 export type Operation =
   | { type: 'damage'; amount: Value }
   | { type: 'relation'; faction: 'faction' | 'opponent'; amount: number; min: number; max: number }
   | { type: 'attributeReward'; key: string; value: Value; bands: { min: number; max: number; amount: number }[]; max: number }
   | { type: 'missionStatus'; status: MissionStatus }
+  | { type: 'setReference'; entity: CharacterRef; key: string; value: CharacterRef }
   | { type: 'spawnTarget' };
 export interface Feedback { color: string; durationMs: number; message: string }
 export interface EventDefinition {
   id: string;
   when?: readonly Condition[];
+  emits?: readonly { type: string }[];
   conditions: readonly Condition[];
   outcomes: readonly {
     id: string;
@@ -25,8 +34,8 @@ export interface EventDefinition {
   }[];
 }
 export type EventResult =
-  | { executed: false; reason: BasicCondition | 'compare' | 'missionStatus' | 'noActiveMission' | 'noApplicableEvent'; message?: string }
-  | { executed: true; eventId: string; outcomeId: string; damage: number; targetHp: number; killed: boolean; feedback: Feedback };
+  | { executed: false; reason: BasicCondition | 'compare' | 'missionStatus' | 'noActiveMission' | 'noApplicableEvent' | 'alive' | 'sameInstance'; message?: string }
+  | { executed: true; eventId: string; outcomeId: string; damage: number; targetHp: number; killed: boolean; feedback: Feedback; facts: readonly Fact[] };
 
 export interface EventContext { world: GameState; contractorId: string; offer: MissionOffer; missionId?: string }
 function requireContext(context?: EventContext): EventContext {
@@ -46,9 +55,30 @@ function factionId(context: EventContext, role: 'faction' | 'opponent'): string 
   if (!id) throw new Error('Missing faction reference');
   return resolve(context.world, id, 'faction').id;
 }
-function read(value: Value, actor: EntityState, context?: EventContext): number {
+function requireReaction(reaction?: ReactionContext): ReactionContext {
+  if (!reaction) throw new Error('This rule requires reaction context');
+  return reaction;
+}
+function character(ref: CharacterRef, actor: EntityState, target: EntityState, reaction?: ReactionContext): EntityState {
+  if (ref === 'actor') return actor;
+  if (ref === 'target') return target;
+  if (ref !== 'relation.source' && ref !== 'relation.target') throw new Error(`Unknown character reference: ${ref}`);
+  const ctx = requireReaction(reaction);
+  const relation = resolve(ctx.world, ctx.relationId, 'relation');
+  return resolve(ctx.world, ref === 'relation.source' ? relation.sourceId : relation.targetId, 'character');
+}
+function read(value: Value, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext): number {
   if (typeof value === 'number') return value;
   if (value.source === 'attribute') return actor.attributes[value.key] ?? 0;
+  if (value.source === 'relationIntensity') {
+    const ctx = requireReaction(reaction);
+    return resolve(ctx.world, ctx.relationId, 'relation').intensity;
+  }
+  if (value.source === 'distance') {
+    const a = character(value.from, actor, target, reaction).position;
+    const b = character(value.to, actor, target, reaction).position;
+    return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+  }
   const ctx = requireContext(context);
   if (value.source === 'relation') {
     const relation = ctx.world.relations[factionId(ctx, value.faction)];
@@ -59,7 +89,7 @@ function read(value: Value, actor: EntityState, context?: EventContext): number 
   if (!mission) throw new Error('Missing mission instance');
   return resolve(ctx.world, mission.targetId, 'character').hp;
 }
-export function matches(condition: Condition, actor: EntityState, target: EntityState, context?: EventContext): boolean {
+export function matches(condition: Condition, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext): boolean {
   if (typeof condition === 'string') {
     switch (condition) {
       case 'actorAlive': return actor.hp > 0;
@@ -69,22 +99,29 @@ export function matches(condition: Condition, actor: EntityState, target: Entity
     }
   }
   if (condition.type === 'compare') {
-    const left = read(condition.left, actor, context);
-    const right = read(condition.right, actor, context);
+    const left = read(condition.left, actor, target, context, reaction);
+    const right = read(condition.right, actor, target, context, reaction);
     return condition.operator === 'gte' ? left >= right : left <= right;
   }
+  if (condition.type === 'sameInstance') return character(condition.left, actor, target, reaction).id === character(condition.right, actor, target, reaction).id;
+  if (condition.type === 'alive') return character(condition.entity, actor, target, reaction).hp > 0;
   const ctx = requireContext(context);
   const mission = contextMission(ctx);
   if (condition.type === 'missionStatus') return condition.statuses.includes(mission?.status ?? 'available');
   return !pendingMission(ctx.world, actor.id, ctx.contractorId);
 }
-function apply(operation: Operation, actor: EntityState, target: EntityState, context?: EventContext) {
+function apply(operation: Operation, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext) {
+  if (operation.type === 'setReference') {
+    const entity = character(operation.entity, actor, target, reaction);
+    entity.references[operation.key] = character(operation.value, actor, target, reaction).id;
+    return;
+  }
   if (operation.type === 'damage') {
-    target.hp = Math.max(0, target.hp - Math.max(0, read(operation.amount, actor, context)));
+    target.hp = Math.max(0, target.hp - Math.max(0, read(operation.amount, actor, target, context, reaction)));
     return;
   }
   if (operation.type === 'attributeReward') {
-    const value = read(operation.value, actor, context);
+    const value = read(operation.value, actor, target, context, reaction);
     const reward = operation.bands.find(band => value >= band.min && value <= band.max)?.amount ?? 0;
     actor.attributes[operation.key] = Math.min(operation.max, (actor.attributes[operation.key] ?? 0) + reward);
     return;
@@ -94,7 +131,7 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
   switch (operation.type) {
     case 'relation': {
       const faction = factionId(ctx, operation.faction);
-      world.relations[faction] = Math.max(operation.min, Math.min(operation.max, read({ source: 'relation', faction: operation.faction }, actor, ctx) + operation.amount));
+      world.relations[faction] = Math.max(operation.min, Math.min(operation.max, read({ source: 'relation', faction: operation.faction }, actor, target, ctx) + operation.amount));
       break;
     }
     case 'missionStatus': {
@@ -126,6 +163,10 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
   }
 }
 
+export function applyOperations(operations: readonly Operation[], actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext) {
+  for (const operation of operations) apply(operation, actor, target, context, reaction);
+}
+
 // No rendering dependency. Inject randomness for reproducible tests.
 export function executeEvent(event: EventDefinition, actor: EntityState, target: EntityState, random: () => number = Math.random, context?: EventContext): EventResult {
   if (context) {
@@ -152,10 +193,11 @@ export function executeEvent(event: EventDefinition, actor: EntityState, target:
   let roll = random() * total;
   const outcome = event.outcomes.find(candidate => (roll -= candidate.weight) < 0) ?? event.outcomes[event.outcomes.length - 1];
   const before = target.hp;
-  for (const operation of outcome.operations) apply(operation, actor, target, context);
+  applyOperations(outcome.operations, actor, target, context);
   return {
     executed: true, eventId: event.id, outcomeId: outcome.id,
     damage: before - target.hp, targetHp: target.hp, killed: before > 0 && target.hp === 0,
     feedback: { ...outcome.feedback },
+    facts: [...new Set((event.emits ?? []).map(emission => emission.type))].map(type => ({ type, actorId: actor.id, targetId: target.id })),
   };
 }

@@ -1,0 +1,4 @@
+{
+  "victim": { "id": "victim", "name": "Vítima", "maxHp": 100, "color": "#f39b38", "interactions": [{ "event": "attack" }] },
+  "observer": { "id": "observer", "name": "Observador", "maxHp": 100, "color": "#b7c7cd", "attackable": false, "interactions": [] }
+}

@@ -56,5 +56,97 @@
         "relation": 50
       }
     ]
+  },
+  {
+    "id": "social",
+    "name": "03 — Reatividade social",
+    "player": {
+      "x": 3,
+      "y": 5
+    },
+    "entities": [
+      {
+        "object": "victim",
+        "key": "victim",
+        "label": "Vítima",
+        "position": {
+          "x": 4,
+          "y": 5
+        }
+      },
+      {
+        "object": "observer",
+        "key": "A",
+        "label": "A",
+        "position": {
+          "x": 4,
+          "y": 4
+        }
+      },
+      {
+        "object": "observer",
+        "key": "B",
+        "label": "B",
+        "position": {
+          "x": 5,
+          "y": 5
+        }
+      },
+      {
+        "object": "observer",
+        "key": "C",
+        "label": "C",
+        "position": {
+          "x": 3,
+          "y": 6
+        }
+      },
+      {
+        "object": "observer",
+        "key": "D",
+        "label": "D",
+        "position": {
+          "x": 0,
+          "y": 0
+        }
+      },
+      {
+        "object": "observer",
+        "key": "E",
+        "label": "E",
+        "position": {
+          "x": 4,
+          "y": 7
+        }
+      }
+    ],
+    "missions": [],
+    "factions": [],
+    "socialRelations": [
+      {
+        "definition": "friendship",
+        "source": "A",
+        "target": "victim",
+        "intensity": 90
+      },
+      {
+        "definition": "friendship",
+        "source": "B",
+        "target": "victim",
+        "intensity": 20
+      },
+      {
+        "definition": "friendship",
+        "source": "D",
+        "target": "victim",
+        "intensity": 90
+      },
+      {
+        "definition": "friendship",
+        "source": "victim",
+        "target": "E",
+        "intensity": 90
+      }
+    ]
   }
 ]

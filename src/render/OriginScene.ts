@@ -6,6 +6,7 @@ const TILE = 48;
 const MAP_X = 24;
 const MAP_Y = 128;
 const color = (value: string) => Phaser.Display.Color.HexStringToColor(value).color;
+const entityColor = (entity: EntityState) => entity.references.hostileTo ? 0xef5350 : color(entity.definition.color);
 
 // Rendering consumes a map; it does not know how the map was produced.
 function drawMap(graphics: Phaser.GameObjects.Graphics, map: WorldMap) {
@@ -24,6 +25,7 @@ export class OriginScene extends Phaser.Scene {
   private scenarioId = 'training';
   private circles = new Map<EntityState, Phaser.GameObjects.Arc>();
   private flashes = new Map<EntityState, Phaser.Time.TimerEvent>();
+  private labels = new Map<EntityState, Phaser.GameObjects.Text>();
   private hud!: Phaser.GameObjects.Graphics;
   private playerLabel!: Phaser.GameObjects.Text;
   private enemyLabel!: Phaser.GameObjects.Text;
@@ -38,6 +40,7 @@ export class OriginScene extends Phaser.Scene {
     this.world = createWorld(this.scenarioId);
     this.focused = undefined;
     this.circles.clear();
+    this.labels.clear();
     drawMap(this.add.graphics(), worldMap);
     this.hud = this.add.graphics();
     const style = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#f0f2ef', lineSpacing: 21 };
@@ -45,7 +48,9 @@ export class OriginScene extends Phaser.Scene {
     this.enemyLabel = this.add.text(348, 27, '', style);
     this.message = this.add.text(24, 625, 'Aproxime-se do guardião para atacar.', { ...style, fontSize: '13px', wordWrap: { width: 480 } });
     this.message.setText(this.scenarioId === 'training' ? 'Aproxime-se do guardião para atacar.' : 'Azul: governo · Roxo: resistência. Espaço para interagir.');
+    if (this.scenarioId === 'social') this.message.setText('Espaço: atacar a vítima. Observe A–E. R reinicia.');
     this.socialLabel = this.add.text(24, 685, '', { ...style, fontSize: '13px', lineSpacing: 7, wordWrap: { width: 480 } });
+    if (this.scenarioId === 'social') this.socialLabel.setStyle({ fontSize: '11px', lineSpacing: 2 });
     this.refresh();
 
     const keyboard = this.input.keyboard!;
@@ -92,11 +97,12 @@ export class OriginScene extends Phaser.Scene {
       this.flashes.get(target)?.remove();
       circle.setFillStyle(color(result.feedback.color));
       this.flashes.set(target, this.time.delayedCall(result.feedback.durationMs, () => {
-        circle.setFillStyle(color(target.definition.color));
+        circle.setFillStyle(entityColor(target));
         this.flashes.delete(target);
       }));
     }
     this.message.setText(result.killed ? 'Guardião derrotado! R para uma nova partida.' : result.feedback.message + (result.damage ? ` −${result.damage} HP` : ''));
+    if (result.killed && this.scenarioId === 'social') this.message.setText('Vítima derrotada. As hostilidades permanecem. R reinicia.');
     for (const reaction of react(this.world)) if (reaction.executed) this.message.setText(reaction.feedback.message);
     this.refresh();
   }
@@ -116,6 +122,15 @@ export class OriginScene extends Phaser.Scene {
       }
       circle.setPosition(MAP_X + entity.position.x * TILE + TILE / 2, MAP_Y + entity.position.y * TILE + TILE / 2);
       circle.setVisible(entity.hp > 0);
+      if (!this.flashes.has(entity)) circle.setFillStyle(entityColor(entity));
+      if (this.scenarioId === 'social') {
+        let label = this.labels.get(entity);
+        if (!label) {
+          label = this.add.text(0, 0, entity.label ?? entity.definition.name, { fontFamily: 'system-ui, sans-serif', fontSize: '11px', color: '#ffffff', backgroundColor: '#182329' }).setOrigin(0.5, 1);
+          this.labels.set(entity, label);
+        }
+        label.setPosition(circle.x, circle.y - 17).setVisible(entity.hp > 0);
+      }
     }
     this.hud.clear().fillStyle(0x454c50).fillRoundedRect(12, 12, 504, 100, 6);
     this.hud.lineStyle(1, 0x697176).lineBetween(264, 24, 264, 100);
@@ -126,7 +141,7 @@ export class OriginScene extends Phaser.Scene {
       this.hud.fillStyle(color(entity.definition.color)).fillCircle(x + 24, 54, 14);
       this.hud.fillStyle(0x232d30).fillRect(x + 62, 54, 154, 8);
       this.hud.fillStyle(0x77cf75).fillRect(x + 62, 54, 154 * entity.hp / entity.definition.maxHp, 8);
-      label.setText(`${entity.definition.name}\n${entity.hp} / ${entity.definition.maxHp} HP`);
+      label.setText(`${entity.label ?? entity.definition.name}\n${entity.hp} / ${entity.definition.maxHp} HP`);
     };
     panel(this.world.player, 28, this.playerLabel, true);
     const nearby = adjacentEntities(this.world);
@@ -143,5 +158,17 @@ export class OriginScene extends Phaser.Scene {
       }),
       ...(missions.length ? [] : ['Missão: nenhuma ativa']),
     ]);
+    if (this.scenarioId === 'social') {
+      const name = (id: string) => {
+        const entity = resolve(this.world, id, 'character');
+        return entity.label ?? entity.definition.name;
+      };
+      this.socialLabel.setText(this.world.entities.map(entity => {
+        const relations = this.world.socialRelations.filter(r => r.sourceId === entity.id || r.targetId === entity.id);
+        const description = relations.map(r => `${name(r.sourceId)} → ${name(r.targetId)}: ${this.world.relationDefinitions[r.definitionId].name} ${r.intensity}`).join('; ');
+        const status = entity.references.hostileTo ? `hostil a ${name(entity.references.hostileTo)}` : 'neutro';
+        return entity === this.world.entities[0] ? `Vítima: ${entity.hp} HP · Relações direcionais e reações abaixo` : `${entity.label}: ${description || 'sem relação'} · ${status}`;
+      }));
+    }
   }
 }

@@ -1,5 +1,6 @@
 {
   "id": "attack",
+  "emits": [{ "type": "attackAttempted" }],
   "conditions": ["actorAlive", "targetAlive", "adjacent", "targetAttackable"],
   "outcomes": [
     {

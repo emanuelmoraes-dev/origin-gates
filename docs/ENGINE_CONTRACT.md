@@ -1,4 +1,4 @@
-# Contrato da engine — 0.2.2
+# Contrato da engine — 0.2.3
 
 ## Definições, identidade e estado
 
@@ -77,4 +77,67 @@ Escolheu-se um registro em memória com união discriminada em vez de ECS, banco
 
 A operação `spawnTarget` preserva o nome e a função de criar o alvo, mas também instancia a missão antes inexistente. Separar essa criação em um sistema genérico de fábricas e encadeamento de referências foi descartado por ampliar o escopo. Combate, relações, faixas e limites de recompensa permanecem nos eventos existentes.
 
-Continuam especializados: adaptador de oferta/missão, `missionStatus`, `noActiveMission`, `missionTargetHp`, `spawnTarget`, papéis `faction/opponent`, relações do único jogador e UI de missões. Atores arbitrários, múltiplas ofertas por representante, mudança de facção, persistência, coleta de histórico, schema completo e rollback transacional não são suportados. Objetos JSON inválidos podem exigir validação adicional antes de operações; não há infraestrutura universal de transações. Identidade entre sessões e retenção de entidades históricas deverão ser avaliadas somente quando houver necessidade concreta.
+Continuam especializados: adaptador de oferta/missão, `missionStatus`, `noActiveMission`, `missionTargetHp`, `spawnTarget`, papéis `faction/opponent`, reputação do único jogador e UI de missões. Múltiplas ofertas por representante, mudança de facção, persistência, coleta de histórico, schema completo e rollback transacional não são suportados. Objetos JSON inválidos podem exigir validação adicional antes de operações; não há infraestrutura universal de transações. Identidade entre sessões e retenção de entidades históricas deverão ser avaliadas somente quando houver necessidade concreta.
+
+## Comandos, fatos e reações independentes — 0.2.3
+
+Um **comando** solicita uma ação, sujeita a `when`/`conditions` e ao sorteio de `outcomes`. Um **fato** descreve uma ocorrência admitida, com `type`, `actorId` e `targetId` concretos. Uma **reação** é uma regra automática interessada em determinado tipo de fato, sem interação direta. **Condições** consultam referências/estado; **operações** transformam o estado. A reação usa `on`, `when` e `operations`; não usa `conditions`, que permanece validação de comandos.
+
+O evento declara emissões no nível da execução, independentemente do outcome:
+
+```json
+{ "id": "attack", "emits": [{ "type": "attackAttempted" }] }
+```
+
+`executeEvent` valida, sorteia, aplica as operações e retorna `facts` no resultado admitido. Tipos repetidos em `emits` são deduplicados por execução. Acerto, esquiva e ataque letal produzem a tentativa; falha de validação não produz fatos nem sorteio. Não há comparação do ID do evento com `attack` no interpretador. Os IDs do fato vêm dos participantes passados à execução, não de `world.player`.
+
+`executeCommand(world, event, actor, target, random?, context?)` verifica participantes registrados, chama o interpretador e despacha os fatos retornados. Qualquer personagem registrado pode ser ator. `interact` continua sendo o caminho da UI e passa o jogador. Chamadas diretas de baixo nível a `executeEvent` retornam os fatos, mas não os despacham; esse comportamento permite testes isolados e exige que novos chamadores usem `executeCommand` ou despachem explicitamente.
+
+### Relações e descoberta das regras
+
+Relações são instâncias `kind: "relation"` no mesmo registro canônico, com `id`, `definitionId`, `sourceId`, `targetId` e `intensity`. Não têm HP ou posição. `world.socialRelations` é uma visão derivada; a intensidade não é copiada para personagens. A reputação entre o jogador e facções continua em `world.relations`; ela não foi migrada nesta versão.
+
+`relations.json` declara definições reutilizáveis, por exemplo:
+
+```json
+{ "friendship": { "id": "friendship", "name": "amizade", "reactions": ["respondToAggression"] } }
+```
+
+Em `scenarios.json`, `entities[].key` declara símbolos locais; `player` é reservado para o jogador. `socialRelations` contém `{ "definition": "friendship", "source": "A", "target": "victim", "intensity": 90 }`. Todos os personagens são criados antes da resolução dos símbolos. Símbolos ausentes/duplicados são erros; nenhum ID fixo de instância é escrito nos dados. `label` é apenas apresentação.
+
+`createRelation` resolve os dois personagens, registra a instância e inscreve suas regras em `world.factSubscriptions[rule.on]`, com IDs da relação e da regra. Não cria relação inversa. Para `friendship`, origem é quem sente amizade; destino é quem recebe esse sentimento. Esse significado está na definição/regra, não em uma condicional específica no TypeScript.
+
+`dispatchFacts` consulta somente o índice do tipo recebido e resolve cada relação inscrita. Não busca regras em missões ou exclusivamente na vítima, nem percorre todos os personagens por ataque. A fonte de inscrições atual são relações; futuras fontes podem acrescentar seus próprios contextos ao despacho. O índice atual permite refinamento futuro por participante sem alterar o produtor dos fatos. Mudanças em associações de regras ou em `on` após a inscrição exigirão reconstrução do índice; limiares e alcance são lidos diretamente dos dados das regras a cada avaliação.
+
+### Referências, condições e operações da reação
+
+`actor` e `target` resolvem os participantes do fato; `relation.source` e `relation.target` resolvem os personagens apontados pela relação. IDs inválidos ou tipos incorretos lançam erro. As extensões reutilizam `matches` e `applyOperations` da engine existente:
+
+- `sameInstance`: igualdade de duas referências concretas.
+- `alive`: HP positivo da referência indicada.
+- `compare` com `relationIntensity`: lê a intensidade canônica.
+- `compare` com `distance`: distância Manhattan entre duas referências; `gte`/`lte` preservam limites inclusivos.
+- `setReference`: grava em `character.references[key]` o ID resolvido de outra referência, sem operação específica de amizade ou vingança.
+
+Exemplo de transformação da regra compartilhada:
+
+```json
+{
+  "on": "attackAttempted",
+  "operations": [
+    { "type": "setReference", "entity": "relation.source", "key": "hostileTo", "value": "actor" }
+  ]
+}
+```
+
+O `when` completo em `reactions.json` exige que `relation.target` seja a vítima do fato, que a origem esteja viva, intensidade ≥ 70 e distância origem/vítima ≤ 3. Os valores estão exclusivamente nos dados. A apresentação interpreta `references.hostileTo` como vermelho persistente; o flash de dano/esquiva continua sendo um temporizador visual independente.
+
+### Limites do despacho e débitos técnicos
+
+Cada ocorrência é representada pelo objeto `Fact` retornado pelo interpretador. Um `WeakSet` por partida impede reprocessar esse mesmo objeto; cada par relação/regra é executado no máximo uma vez por ocorrência, mesmo com inscrições duplicadas. Uma tentativa posterior cria outro objeto de fato e pode reagir novamente. Atribuir o mesmo `hostileTo` é idempotente; não há soma de hostilidade ou criação de novas relações.
+
+O despacho é síncrono, em uma passagem finita pelas inscrições, na ordem de criação. Reações não declaram emissões, portanto não há cascatas, fila ou execução periódica enquanto uma condição permanece verdadeira. As condições consultam o estado após o comando e antes de cada reação; não há snapshot transacional. Falha de configuração durante uma operação não tem rollback nem repetição automática.
+
+O controle de ocorrência por identidade de objeto é local à memória: clonar ou desserializar um fato representa uma nova ocorrência para este MVP. IDs persistentes de ocorrência, histórico, transporte, remoção/reindexação de inscrições e política de prioridade/conflitos deverão ser avaliados quando necessários. Só relações fornecem regras ao novo despacho; não há resolvedor universal de contextos. As regras sociais usam as capacidades comuns, enquanto operações de missão ainda exigem o contexto especializado correspondente.
+
+**Integração pendente:** `react` continua concluindo missões pelo mecanismo da 0.2.2. Migrar esse fluxo para um futuro fato como `characterDied` deve substituir a consulta antiga, não consolidar dois sistemas permanentes. Também permanecem fora do escopo propagação de informação, percepção com obstáculos, IA, perseguição, contra-ataques e relações procedurais.
