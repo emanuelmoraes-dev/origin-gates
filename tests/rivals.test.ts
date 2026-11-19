@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { executeEvent } from '../src/game/events';
 import { adjacentEntities, createWorld, events, interact, react, scenarios } from '../src/game/world';
-import { movePlayer, resolve, worldMap, type GameState } from '../src/game/state';
+import { movePlayer, requireRelation, resolve, worldMap, type GameState } from '../src/game/state';
 
+function reputation(world: GameState, factionId: string) {
+  return requireRelation(world, 'reputation', factionId, world.player.id);
+}
+function scores(world: GameState) { return world.factions.map(f => reputation(world, f.id).intensity); }
 function setup(index = 0) {
   const world = createWorld('rivals');
   const rep = world.entities[index];
@@ -35,10 +39,10 @@ describe('declarative rival missions', () => {
   });
   it.each([0, 1])('refuses below 20 and accepts exactly 20 (%s)', index => {
     const { world, mission, rep, current } = setup(index);
-    world.relations[mission.faction] = 19;
+    reputation(world, mission.faction).intensity = 19;
     expect(interact(world, rep)).toMatchObject({ executed: false, reason: 'compare' });
     expect(world.missions).toHaveLength(0);
-    world.relations[mission.faction] = 20;
+    reputation(world, mission.faction).intensity = 20;
     expect(interact(world, rep).executed).toBe(true);
   });
   it('does not complete or reward while target is alive', () => {
@@ -48,7 +52,7 @@ describe('declarative rival missions', () => {
     expect(interact(world, rep)).toMatchObject({ executed: false, reason: 'missionStatus' });
     expect(current().status).toBe('active');
     expect(world.player.attributes.damage).toBe(10);
-    expect(Object.values(world.relations)).toEqual([50, 50]);
+    expect(scores(world)).toEqual([50, 50]);
   });
   it.each([0, 1])('updates both relations and uses the post-update reward (%s)', index => {
     const { world, mission, rep, current } = setup(index);
@@ -56,21 +60,21 @@ describe('declarative rival missions', () => {
     finish(world, index);
     expect(current().status).toBe('ready');
     expect(interact(world, rep).executed).toBe(true);
-    expect(world.relations[mission.faction]).toBe(70);
-    expect(world.relations[mission.opponent]).toBe(35);
+    expect(reputation(world, mission.faction).intensity).toBe(70);
+    expect(reputation(world, mission.opponent).intensity).toBe(35);
     expect(world.player.attributes.damage).toBe(15);
     expect(current().status).toBe('completed');
   });
   it('clamps relations and accumulated damage', () => {
     const { world, mission, rep } = setup();
-    world.relations[mission.faction] = 95;
-    world.relations[mission.opponent] = 5;
+    reputation(world, mission.faction).intensity = 95;
+    reputation(world, mission.opponent).intensity = 5;
     world.player.attributes.damage = 49;
     interact(world, rep);
     finish(world);
     interact(world, rep);
-    expect(world.relations[mission.faction]).toBe(100);
-    expect(world.relations[mission.opponent]).toBe(0);
+    expect(reputation(world, mission.faction).intensity).toBe(100);
+    expect(reputation(world, mission.opponent).intensity).toBe(0);
     expect(world.player.attributes.damage).toBe(50);
   });
   it.each([[0, 1], [29, 1], [30, 3], [59, 3], [60, 5], [79, 5], [80, 10], [100, 10]])('evaluates reward band for relation %s', (relation, bonus) => {
@@ -80,7 +84,7 @@ describe('declarative rival missions', () => {
     definitions.deliver.outcomes[0].operations = definitions.deliver.outcomes[0].operations.filter(op => op.type !== 'relation');
     interact(world, rep);
     finish(world);
-    world.relations[mission.faction] = relation;
+    reputation(world, mission.faction).intensity = relation;
     expect(interact(world, rep, () => 0, definitions).executed).toBe(true);
     expect(world.player.attributes.damage).toBe(10 + bonus);
     expect(current().status).toBe('completed');
@@ -140,7 +144,7 @@ describe('declarative rival missions', () => {
     const threshold = definitions.accept.conditions.find(c => typeof c !== 'string' && c.type === 'compare');
     if (typeof threshold === 'object' && threshold.type === 'compare') threshold.right = 60;
     expect(interact(world, rep, () => 0, definitions).executed).toBe(false);
-    world.relations[mission.faction] = 60;
+    reputation(world, mission.faction).intensity = 60;
     expect(interact(world, rep, () => 0, definitions).executed).toBe(true);
     finish(world);
     for (const operation of definitions.deliver.outcomes[0].operations) {
@@ -151,8 +155,8 @@ describe('declarative rival missions', () => {
       }
     }
     interact(world, rep, () => 0, definitions);
-    expect(world.relations[mission.faction]).toBe(67);
-    expect(world.relations[mission.opponent]).toBe(46);
+    expect(reputation(world, mission.faction).intensity).toBe(67);
+    expect(reputation(world, mission.opponent).intensity).toBe(46);
     expect(world.player.attributes.damage).toBe(17);
   });
   it('repeated choices block the opposing faction until reset; definitions remain unchanged', () => {
@@ -163,11 +167,11 @@ describe('declarative rival missions', () => {
       finish(world);
       interact(world, rep);
     }
-    expect(world.relations[world.factions[1].id]).toBe(5);
+    expect(reputation(world, world.factions[1].id).intensity).toBe(5);
     const other = world.entities[1];
     world.player.position = { x: other.position.x, y: other.position.y - 1 };
     expect(interact(world, other)).toMatchObject({ executed: false, reason: 'compare' });
-    expect(Object.values(createWorld('rivals').relations)).toEqual([50, 50]);
+    expect(scores(createWorld('rivals'))).toEqual([50, 50]);
     expect(createWorld('rivals').player.attributes.damage).toBe(10);
     expect(createWorld('rivals').entities).toHaveLength(2);
     expect(JSON.stringify({ events, scenarios })).toBe(snapshot);

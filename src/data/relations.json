@@ -1,3 +1,12 @@
 {
-  "friendship": { "id": "friendship", "name": "amizade", "reactions": ["respondToAggression"] }
+  "friendship": {
+    "id": "friendship", "name": "amizade",
+    "sourceKinds": ["character"], "targetKinds": ["character"],
+    "unique": true, "reactions": ["respondToAggression"]
+  },
+  "reputation": {
+    "id": "reputation", "name": "reputação",
+    "sourceKinds": ["faction"], "targetKinds": ["character"],
+    "unique": true, "intensity": { "min": 0, "max": 100 }, "reactions": []
+  }
 }

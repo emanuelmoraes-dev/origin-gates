@@ -28,14 +28,14 @@ npm run build
 - `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
 - `src/data/events/attack.json`: condições, pesos dos resultados, operações de dano e feedback visual. Pesos iguais dão 50% para cada resultado. Cores usam hexadecimal e duração usa milissegundos.
 - `src/data/objects/reactivity.json`: vítima e definição compartilhada pelos cinco observadores.
-- `src/data/relations.json`: tipos de relação e regras reativas associadas.
+- `src/data/relations.json`: tipos de relação, categorias das pontas, unicidade, limites de intensidade e regras reativas associadas.
 - `src/data/reactions.json`: tipo de fato observado, condições de intensidade/distância e transformação por referências.
 - `src/game/reactions.ts`: despacho síncrono dos fatos usando inscrições por tipo, condições e operações da engine existente.
 - `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
 - `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
 - `src/data/factions.json`: definições das facções sem representação no mapa.
 - `src/data/scenarios.json`: nomes do seletor, posições iniciais, facções/relações iniciais e definições de missão habilitadas. O mapa continua exclusivamente em TypeScript.
-- `src/data/events/social.json`: aceitação, entrega, reação à morte, limite mínimo de relação, alterações de relações, faixas de recompensa e teto de dano.
+- `src/data/events/social.json`: aceitação, entrega, reação à morte, limiar mínimo de reputação, deltas, faixas de recompensa e teto de dano. Os limites de reputação 0–100 pertencem a `relations.json`.
 - `src/game/world.ts`: cria partidas isoladas, encontra interações declaradas e avalia reações sobre o estado atual. Compartilha o interpretador de eventos com o combate.
 - `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).
 - `src/game/state.ts`: mapa fixo de 10 × 10 em TypeScript (`L` terra; `W` água), criação do estado e regras de movimento.
@@ -50,7 +50,7 @@ Os testes executam a lógica diretamente, sem carregar Phaser ou navegador, cobr
 
 A engine preserva as condições originais (`actorAlive`, `targetAlive`, `adjacent`) e acrescenta `targetAttackable`, `compare` (comparações `gte`/`lte` parametrizadas), `missionStatus` e `noActiveMission`. As referências numéricas consultam um atributo do jogador, a relação com `faction`/`opponent` da missão ou a vida da instância do alvo.
 
-As operações são `damage`, `relation` (delta e limites), `attributeReward` (consulta e faixas numéricas), `missionStatus` e `spawnTarget`. O array de operações é executado em ordem: relações são alteradas antes de consultar a faixa de recompensa. O combate consulta `attributes.damage` em ambos os cenários; no treinamento ele permanece em 10.
+As operações são `damage`, `relation` (adaptador de delta para a reputação da facção sobre o ator), `attributeReward` (consulta e faixas numéricas), `missionStatus` e `spawnTarget`. Reputação e amizade compartilham instâncias em `world.instances`, consultadas pela visão `world.relationInstances`; os limites pertencem ao tipo da relação. No cenário, `relations` usa símbolos locais, por exemplo governo → jogador para reputação e A → vítima para amizade. O array de operações é executado em ordem: relações são alteradas antes de consultar a faixa de recompensa. O combate consulta `attributes.damage` em todos os cenários; no treinamento ele permanece em 10.
 
 `when` seleciona qual evento se aplica ao estado atual; `conditions` valida sua execução e pode retornar uma mensagem de recusa. A reação de alvo derrotado consulta a instância da missão e o ID de seu alvo, sem consultar o identificador de um ataque anterior. `available` indica uma oferta sem missão pendente. As instâncias percorrem `active → ready → completed`; uma nova aceitação cria outra instância. A entrega exige `ready`, impedindo recompensa duplicada.
 

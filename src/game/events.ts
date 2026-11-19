@@ -1,4 +1,4 @@
-import { createEntity, identity, isAdjacent, pendingMission, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
+import { addRelationDelta, createEntity, getRelationIntensity, identity, isAdjacent, pendingMission, requireRelation, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
 
 type BasicCondition = 'actorAlive' | 'targetAlive' | 'adjacent' | 'targetAttackable';
 export type CharacterRef = 'actor' | 'target' | 'relation.source' | 'relation.target';
@@ -15,7 +15,7 @@ export type Condition = BasicCondition
   | { type: 'noActiveMission'; message?: string };
 export type Operation =
   | { type: 'damage'; amount: Value }
-  | { type: 'relation'; faction: 'faction' | 'opponent'; amount: number; min: number; max: number }
+  | { type: 'relation'; faction: 'faction' | 'opponent'; amount: number }
   | { type: 'attributeReward'; key: string; value: Value; bands: { min: number; max: number; amount: number }[]; max: number }
   | { type: 'missionStatus'; status: MissionStatus }
   | { type: 'setReference'; entity: CharacterRef; key: string; value: CharacterRef }
@@ -72,7 +72,7 @@ function read(value: Value, actor: EntityState, target: EntityState, context?: E
   if (value.source === 'attribute') return actor.attributes[value.key] ?? 0;
   if (value.source === 'relationIntensity') {
     const ctx = requireReaction(reaction);
-    return resolve(ctx.world, ctx.relationId, 'relation').intensity;
+    return getRelationIntensity(ctx.world, ctx.relationId);
   }
   if (value.source === 'distance') {
     const a = character(value.from, actor, target, reaction).position;
@@ -81,9 +81,8 @@ function read(value: Value, actor: EntityState, target: EntityState, context?: E
   }
   const ctx = requireContext(context);
   if (value.source === 'relation') {
-    const relation = ctx.world.relations[factionId(ctx, value.faction)];
-    if (relation === undefined) throw new Error('Missing player relation');
-    return relation;
+    const relation = requireRelation(ctx.world, 'reputation', factionId(ctx, value.faction), actor.id);
+    return getRelationIntensity(ctx.world, relation.id);
   }
   const mission = contextMission(ctx);
   if (!mission) throw new Error('Missing mission instance');
@@ -130,8 +129,8 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
   const { world } = ctx;
   switch (operation.type) {
     case 'relation': {
-      const faction = factionId(ctx, operation.faction);
-      world.relations[faction] = Math.max(operation.min, Math.min(operation.max, read({ source: 'relation', faction: operation.faction }, actor, target, ctx) + operation.amount));
+      const relation = requireRelation(world, 'reputation', factionId(ctx, operation.faction), actor.id);
+      addRelationDelta(world, relation.id, operation.amount);
       break;
     }
     case 'missionStatus': {

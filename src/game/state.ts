@@ -58,6 +58,10 @@ export interface MissionState extends Identity {
 export interface FactionState extends Identity { readonly kind: 'faction'; readonly name: string }
 export interface RelationDefinition {
   readonly id: string; readonly name: string; readonly reactions: readonly string[];
+  readonly sourceKinds: readonly WorldInstance['kind'][];
+  readonly targetKinds: readonly WorldInstance['kind'][];
+  readonly unique: boolean;
+  readonly intensity?: { readonly min: number; readonly max: number };
 }
 export interface RelationState extends Identity {
   readonly kind: 'relation'; readonly sourceId: string; readonly targetId: string;
@@ -79,12 +83,11 @@ export interface GameState extends IdentityStore {
   scenario: string;
   player: EntityState;
   entities: EntityState[];
-  relations: Record<string, number>;
   readonly missions: readonly MissionState[];
   readonly factions: readonly FactionState[];
   missionDefinitions: readonly MissionDefinition[];
   objectDefinitions: Readonly<Record<string, ObjectDefinition>>;
-  readonly socialRelations: readonly RelationState[];
+  readonly relationInstances: readonly RelationState[];
   relationDefinitions: Readonly<Record<string, RelationDefinition>>;
   reactionDefinitions: Readonly<Record<string, ReactionDefinition>>;
   factSubscriptions: Record<string, { relationId: string; ruleId: string }[]>;
@@ -113,19 +116,69 @@ export function createEntity(definition: ObjectDefinition, position: Position, s
 }
 
 export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number): RelationState {
-  const definition = world.relationDefinitions[definitionId];
-  if (!definition || !Number.isFinite(intensity)) throw new Error('Invalid relation definition or intensity');
-  resolve(world, sourceId, 'character');
-  resolve(world, targetId, 'character');
+  const definition = validateRelationEndpoints(world, definitionId, sourceId, targetId);
+  const value = normalizeIntensity(definition, intensity);
+  if (definition.unique && world.relationInstances.some(r => r.definitionId === definitionId && r.sourceId === sourceId && r.targetId === targetId)) {
+    throw new Error('Duplicate directional relation');
+  }
   const rules = [...new Set(definition.reactions)].map(ruleId => {
     const rule = world.reactionDefinitions[ruleId];
     if (!rule) throw new Error(`Unknown reaction rule: ${ruleId}`);
     return { ruleId, on: rule.on };
   });
-  const relation: RelationState = { ...identity(world, definition.id), kind: 'relation', sourceId, targetId, intensity };
+  const relation: RelationState = { ...identity(world, definition.id), kind: 'relation', sourceId, targetId, intensity: value };
   world.instances[relation.id] = relation;
   for (const rule of rules) (world.factSubscriptions[rule.on] ??= []).push({ relationId: relation.id, ruleId: rule.ruleId });
   return relation;
+}
+
+function validateRelationEndpoints(world: GameState, definitionId: string, sourceId: string, targetId: string): RelationDefinition {
+  const definition = world.relationDefinitions[definitionId];
+  if (!definition || definition.id !== definitionId || typeof definition.unique !== 'boolean' || !definition.sourceKinds?.length || !definition.targetKinds?.length) throw new Error('Invalid relation definition');
+  for (const [id, kinds] of [[sourceId, definition.sourceKinds], [targetId, definition.targetKinds]] as const) {
+    const instance = world.instances[id];
+    if (!instance || instance.id !== id || !kinds.includes(instance.kind)) throw new Error(`Invalid relation participant: ${id}`);
+  }
+  return definition;
+}
+
+function normalizeIntensity(definition: RelationDefinition, value: number): number {
+  if (!Number.isFinite(value)) throw new Error('Non-finite relation intensity');
+  const bounds = definition.intensity;
+  if (!bounds) return value;
+  if (!Number.isFinite(bounds.min) || !Number.isFinite(bounds.max) || bounds.min > bounds.max) throw new Error('Invalid relation intensity bounds');
+  return Math.max(bounds.min, Math.min(bounds.max, value));
+}
+
+export function findRelation(world: GameState, definitionId: string, sourceId: string, targetId: string): RelationState | undefined {
+  validateRelationEndpoints(world, definitionId, sourceId, targetId);
+  const matches = world.relationInstances.filter(r => r.definitionId === definitionId && r.sourceId === sourceId && r.targetId === targetId);
+  if (matches.length > 1) throw new Error('Ambiguous relation; use an instance ID');
+  return matches[0];
+}
+
+export function requireRelation(world: GameState, definitionId: string, sourceId: string, targetId: string): RelationState {
+  const relation = findRelation(world, definitionId, sourceId, targetId);
+  if (!relation) throw new Error(`Missing relation: ${definitionId} (${sourceId} -> ${targetId})`);
+  return relation;
+}
+
+export function getRelationIntensity(world: GameState, relationId: string): number {
+  const relation = resolve(world, relationId, 'relation');
+  const definition = validateRelationEndpoints(world, relation.definitionId, relation.sourceId, relation.targetId);
+  if (normalizeIntensity(definition, relation.intensity) !== relation.intensity) throw new Error('Relation intensity outside definition bounds');
+  return relation.intensity;
+}
+
+export function setRelationIntensity(world: GameState, relationId: string, value: number): void {
+  const relation = resolve(world, relationId, 'relation');
+  const definition = validateRelationEndpoints(world, relation.definitionId, relation.sourceId, relation.targetId);
+  relation.intensity = normalizeIntensity(definition, value);
+}
+
+export function addRelationDelta(world: GameState, relationId: string, delta: number): void {
+  if (!Number.isFinite(delta)) throw new Error('Non-finite relation delta');
+  setRelationIntensity(world, relationId, getRelationIntensity(world, relationId) + delta);
 }
 
 export function pendingMission(world: GameState, executorId: string, contractorId: string): MissionState | undefined {

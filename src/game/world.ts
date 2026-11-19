@@ -2,7 +2,7 @@ import player from '../data/objects/player.json';
 import enemy from '../data/objects/enemy.json';
 import socialObjects from '../data/objects/social.json';
 import reactivityObjects from '../data/objects/reactivity.json';
-import relationDefinitions from '../data/relations.json';
+import relationData from '../data/relations.json';
 import reactionData from '../data/reactions.json';
 import missions from '../data/missions.json';
 import factionDefinitions from '../data/factions.json';
@@ -10,14 +10,14 @@ import scenarioData from '../data/scenarios.json';
 import attack from '../data/events/attack.json';
 import socialEvents from '../data/events/social.json';
 import { executeEvent, matches, type EventContext, type EventDefinition, type EventResult, type ReactionDefinition } from './events';
-import { createEntity, createIdentityStore, createRelation, identity, isAdjacent, resolve, type EntitySpawn, type EntityState, type FactionState, type GameState, type MissionDefinition, type MissionState, type ObjectDefinition, type Position, type RelationSpawn, type RelationState } from './state';
+import { createEntity, createIdentityStore, createRelation, identity, isAdjacent, resolve, type EntitySpawn, type EntityState, type FactionState, type GameState, type MissionDefinition, type MissionState, type ObjectDefinition, type Position, type RelationDefinition, type RelationSpawn, type RelationState } from './state';
 import { selectInteraction } from './interactions';
 import { dispatchFacts } from './reactions';
 
 interface ScenarioDefinition {
   id: string; name: string; player: Position; entities: EntitySpawn[];
-  missions: string[]; factions: { definition: string; relation: number }[];
-  socialRelations?: RelationSpawn[];
+  missions: string[]; factions: { definition: string }[];
+  relations?: RelationSpawn[];
 }
 export const scenarios: readonly ScenarioDefinition[] = scenarioData;
 export const events = { attack, ...socialEvents } as Record<string, EventDefinition>;
@@ -30,11 +30,11 @@ export function createWorld(scenarioId: string): GameState {
   const playerInstance = createEntity(player, scenario.player, store);
   const world: GameState = {
     ...store, scenario: scenarioId, player: playerInstance,
-    entities: [], relations: {},
+    entities: [],
     get missions() { return Object.values(this.instances).filter((item): item is MissionState => item.kind === 'mission'); },
     get factions() { return Object.values(this.instances).filter((item): item is FactionState => item.kind === 'faction'); },
-    get socialRelations() { return Object.values(this.instances).filter((item): item is RelationState => item.kind === 'relation'); },
-    relationDefinitions, reactionDefinitions: reactionData as Record<string, ReactionDefinition>,
+    get relationInstances() { return Object.values(this.instances).filter((item): item is RelationState => item.kind === 'relation'); },
+    relationDefinitions: relationData as Readonly<Record<string, RelationDefinition>>, reactionDefinitions: reactionData as Record<string, ReactionDefinition>,
     factSubscriptions: {}, processedFacts: new WeakSet(),
     missionDefinitions: missionDefinitions as MissionDefinition[], objectDefinitions,
   };
@@ -44,7 +44,6 @@ export function createWorld(scenarioId: string): GameState {
     if (!definition || factions.has(config.definition)) throw new Error(`Invalid faction definition: ${config.definition}`);
     const faction: FactionState = { ...identity(world, definition.id), kind: 'faction', name: definition.name };
     world.instances[faction.id] = faction;
-    world.relations[faction.id] = config.relation;
     factions.set(config.definition, faction.id);
   }
   const factionRef = (id: string) => {
@@ -53,6 +52,10 @@ export function createWorld(scenarioId: string): GameState {
     return instanceId;
   };
   const symbols = new Map<string, string>([['player', world.player.id]]);
+  for (const [key, id] of factions) {
+    if (symbols.has(key)) throw new Error(`Duplicate scenario symbol: ${key}`);
+    symbols.set(key, id);
+  }
   world.entities = scenario.entities.map((item: EntitySpawn) => {
     const definition = objectDefinitions[item.object as keyof typeof objectDefinitions];
     const entity = createEntity(definition, item.position, world, item.interactions);
@@ -74,7 +77,7 @@ export function createWorld(scenarioId: string): GameState {
     if (!id) throw new Error(`Unknown scenario symbol: ${key}`);
     return id;
   };
-  for (const config of scenario.socialRelations ?? []) {
+  for (const config of scenario.relations ?? []) {
     createRelation(world, config.definition, symbolRef(config.source), symbolRef(config.target), config.intensity);
   }
   return world;

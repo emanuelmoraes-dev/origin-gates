@@ -7,7 +7,7 @@ import { createWorld, events, executeCommand, interact, scenarios } from '../src
 function setup() {
   const world = createWorld('social');
   const [victim, a, b, c, d, e] = world.entities;
-  return { world, victim, a, b, c, d, e, relation: world.socialRelations[0] };
+  return { world, victim, a, b, c, d, e, relation: world.relationInstances[0] };
 }
 function fact(actorId: string, targetId: string, type = 'attackAttempted'): Fact { return { type, actorId, targetId }; }
 
@@ -58,10 +58,10 @@ describe('declarative fact production', () => {
 describe('directional relation instances', () => {
   it('registers unique identities and valid endpoints without character-only fields', () => {
     const { world } = setup();
-    expect(world.socialRelations).toHaveLength(4);
+    expect(world.relationInstances).toHaveLength(4);
     const ids = Object.values(world.instances).map(item => item.id);
     expect(new Set(ids).size).toBe(ids.length);
-    for (const r of world.socialRelations) {
+    for (const r of world.relationInstances) {
       expect(resolve(world, r.id, 'relation')).toBe(r);
       expect(resolve(world, r.sourceId, 'character')).toBeDefined();
       expect(resolve(world, r.targetId, 'character')).toBeDefined();
@@ -73,16 +73,16 @@ describe('directional relation instances', () => {
     const { world, victim, a, relation } = setup();
     expect(relation.sourceId).toBe(a.id);
     expect(relation.targetId).toBe(victim.id);
-    expect(world.socialRelations.some(r => r.sourceId === victim.id && r.targetId === a.id)).toBe(false);
+    expect(world.relationInstances.some(r => r.sourceId === victim.id && r.targetId === a.id)).toBe(false);
     expect(a).not.toHaveProperty('intensity');
-    const other = world.socialRelations[1];
+    const other = world.relationInstances[1];
     relation.intensity = 0;
     expect(other.intensity).toBe(20);
   });
   it('rejects invalid endpoints and definitions without registering partial relations', () => {
     const { world, victim } = setup();
     const count = Object.keys(world.instances).length;
-    expect(() => createRelation(world, 'friendship', 'missing', victim.id, 90)).toThrow('Invalid character reference');
+    expect(() => createRelation(world, 'friendship', 'missing', victim.id, 90)).toThrow('Invalid relation participant');
     expect(() => createRelation(world, 'unknown', world.player.id, victim.id, 90)).toThrow('Invalid relation definition');
     expect(() => createRelation(world, 'friendship', world.player.id, victim.id, NaN)).toThrow();
     expect(Object.keys(world.instances)).toHaveLength(count);
@@ -96,7 +96,7 @@ describe('fact-driven reactions without missions', () => {
     expect(interact(world, victim, () => roll).executed).toBe(true);
     expect(a.references.hostileTo).toBe(world.player.id);
     for (const observer of [b, c, d, e]) expect(observer.references).toEqual({});
-    expect(world.relations).toEqual({});
+    expect(world.relationInstances.every(r => r.definitionId !== 'reputation')).toBe(true);
     expect(world.missions).toHaveLength(0);
   });
   it.each([[69, false], [70, true], [71, true]])('uses inclusive intensity threshold (%s)', (intensity, reacts) => {
@@ -125,9 +125,9 @@ describe('fact-driven reactions without missions', () => {
   });
   it('keeps absent and inverse relations neutral', () => {
     const { world, victim, c, e } = setup();
-    expect(world.socialRelations.some(r => r.sourceId === c.id)).toBe(false);
-    expect(world.socialRelations.some(r => r.sourceId === e.id && r.targetId === victim.id)).toBe(false);
-    expect(world.socialRelations.some(r => r.sourceId === victim.id && r.targetId === e.id)).toBe(true);
+    expect(world.relationInstances.some(r => r.sourceId === c.id)).toBe(false);
+    expect(world.relationInstances.some(r => r.sourceId === e.id && r.targetId === victim.id)).toBe(false);
+    expect(world.relationInstances.some(r => r.sourceId === victim.id && r.targetId === e.id)).toBe(true);
     interact(world, victim, () => 0.5);
     expect(c.references).toEqual({});
     expect(e.references).toEqual({});
@@ -142,7 +142,7 @@ describe('fact-driven reactions without missions', () => {
   it('supports multiple relation instances with one rule and shared NPC definitions', () => {
     const { world, victim, a, b } = setup();
     expect(a.definitionId).toBe(b.definitionId);
-    world.socialRelations[1].intensity = 90;
+    world.relationInstances[1].intensity = 90;
     interact(world, victim, () => 0.5);
     expect(a.references.hostileTo).toBe(world.player.id);
     expect(b.references.hostileTo).toBe(world.player.id);
@@ -175,7 +175,7 @@ describe('fact-driven reactions without missions', () => {
     expect(a.references).toEqual({ hostileTo: world.player.id });
     expect(victim.hp).toBe(100);
     for (const observer of [b, c, d, e]) expect(observer.references).toEqual({});
-    expect(world.socialRelations.map(r => r.intensity)).toEqual([90, 20, 90, 90]);
+    expect(world.relationInstances.map(r => r.intensity)).toEqual([90, 20, 90, 90]);
   });
   it('a lethal admitted attack still emits its fact and a refused subsequent attack does not', () => {
     const { world, victim, a } = setup();
@@ -209,7 +209,7 @@ describe('reaction data configuration and isolation', () => {
   });
   it('does not specialize on a relation type or on the name of its reference slot', () => {
     const { world, victim, c } = setup();
-    world.relationDefinitions = { ...world.relationDefinitions, alliance: { id: 'alliance', name: 'aliança', reactions: ['respondToAggression'] } };
+    world.relationDefinitions = { ...world.relationDefinitions, alliance: { ...world.relationDefinitions.friendship, id: 'alliance', name: 'aliança' } };
     createRelation(world, 'alliance', c.id, victim.id, 90);
     const definitions = structuredClone(world.reactionDefinitions);
     definitions.respondToAggression.operations = [{ type: 'setReference', entity: 'relation.source', key: 'observedActor', value: 'actor' }];
@@ -223,10 +223,10 @@ describe('reaction data configuration and isolation', () => {
     expect(a.references.hostileTo).toBe(world.player.id);
     const fresh = createWorld('social');
     expect(fresh.entities.every(e => !e.references.hostileTo)).toBe(true);
-    expect(fresh.socialRelations.map(r => r.intensity)).toEqual([90, 20, 90, 90]);
+    expect(fresh.relationInstances.map(r => r.intensity)).toEqual([90, 20, 90, 90]);
     for (const scenario of ['training', 'rivals']) {
       const other = createWorld(scenario);
-      expect(other.socialRelations).toHaveLength(0);
+      expect(other.relationInstances.some(r => r.definitionId === 'friendship')).toBe(false);
       expect(other.factSubscriptions).toEqual({});
       expect(other.entities.every(e => !e.references.hostileTo)).toBe(true);
     }

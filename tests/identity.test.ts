@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { executeEvent } from '../src/game/events';
 import { selectInteraction } from '../src/game/interactions';
-import { createEntity, resolve, type EntityState, type GameState, type MissionState } from '../src/game/state';
+import { createEntity, requireRelation, resolve, type EntityState, type GameState, type MissionState } from '../src/game/state';
 import { createWorld, events, interact, react } from '../src/game/world';
 
+function reputation(world: GameState, factionId: string) {
+  return requireRelation(world, 'reputation', factionId, world.player.id);
+}
+function scores(world: GameState) { return world.factions.map(f => reputation(world, f.id).intensity); }
 function approach(world: GameState, target: EntityState) {
   world.player.position = { x: target.position.x, y: target.position.y - 1 };
 }
@@ -48,10 +52,10 @@ describe('instance identity and concrete references', () => {
       expect(resolve(world, faction.id, 'faction')).toBe(faction);
       expect(faction).not.toHaveProperty('hp');
       expect(faction).not.toHaveProperty('position');
-      expect(world.relations[faction.id]).toBe(50);
+      expect(reputation(world, faction.id).intensity).toBe(50);
       expect(world.entities[i].factionId).toBe(faction.id);
     }
-    expect(new Set(Object.values(world.instances).map(item => item.id)).size).toBe(5);
+    expect(new Set(Object.values(world.instances).map(item => item.id)).size).toBe(7);
   });
 
   it('instantiates the same mission definition with independent participants and same-definition NPC targets', () => {
@@ -85,8 +89,8 @@ describe('instance identity and concrete references', () => {
     expect(interact(world, b).executed).toBe(true);
     expect(second.status).toBe('completed');
     expect(JSON.stringify(first)).toBe(firstSnapshot);
-    expect(world.relations[b.factionId!]).toBe(70);
-    expect(world.relations[a.factionId!]).toBe(35);
+    expect(reputation(world, b.factionId!).intensity).toBe(70);
+    expect(reputation(world, a.factionId!).intensity).toBe(35);
     expect(world.player.attributes.damage).toBe(15);
     const context = { world, offer: b.offer!, contractorId: b.id, missionId: second.id };
     expect(executeEvent(events.deliver, world.player, b, () => 0, context).executed).toBe(false);
@@ -146,9 +150,9 @@ describe('instance identity and concrete references', () => {
     world.instances[mission.id] = mission;
     mission.status = 'ready';
     const context = { world, offer: rep.offer!, contractorId: rep.id, missionId: 'missing' };
-    const before = JSON.stringify(world.relations);
+    const before = JSON.stringify(world.relationInstances);
     expect(() => executeEvent(events.deliver, world.player, rep, () => 0, context)).toThrow('Invalid mission reference');
-    expect(JSON.stringify(world.relations)).toBe(before);
+    expect(JSON.stringify(world.relationInstances)).toBe(before);
   });
 
   it('rejects delivery with the wrong contractor or executor before applying rewards', () => {
@@ -160,7 +164,7 @@ describe('instance identity and concrete references', () => {
     expect(() => executeEvent(events.deliver, world.player, other, () => 0, context)).toThrow('Mission contractor mismatch');
     context.contractorId = rep.id;
     expect(() => executeEvent(events.deliver, other, rep, () => 0, context)).toThrow('Mission executor mismatch');
-    expect(Object.values(world.relations)).toEqual([50, 50]);
+    expect(scores(world)).toEqual([50, 50]);
   });
 
   it('preserves all original JSON definitions through concurrent missions and repetition', () => {
@@ -177,7 +181,7 @@ describe('instance identity and concrete references', () => {
     expect(data()).toBe(before);
     const fresh = createWorld('rivals');
     expect(fresh.missions).toHaveLength(0);
-    expect(Object.values(fresh.relations)).toEqual([50, 50]);
+    expect(scores(fresh)).toEqual([50, 50]);
     expect(fresh.player.attributes.damage).toBe(10);
   });
 });

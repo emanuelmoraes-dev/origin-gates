@@ -16,7 +16,8 @@
       }
     ],
     "missions": [],
-    "factions": []
+    "factions": [],
+    "relations": []
   },
   {
     "id": "rivals",
@@ -48,12 +49,24 @@
     ],
     "factions": [
       {
-        "definition": "government",
-        "relation": 50
+        "definition": "government"
       },
       {
-        "definition": "resistance",
-        "relation": 50
+        "definition": "resistance"
+      }
+    ],
+    "relations": [
+      {
+        "definition": "reputation",
+        "source": "government",
+        "target": "player",
+        "intensity": 50
+      },
+      {
+        "definition": "reputation",
+        "source": "resistance",
+        "target": "player",
+        "intensity": 50
       }
     ]
   },
@@ -122,7 +135,7 @@
     ],
     "missions": [],
     "factions": [],
-    "socialRelations": [
+    "relations": [
       {
         "definition": "friendship",
         "source": "A",

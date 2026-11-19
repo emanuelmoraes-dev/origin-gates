@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { adjacentEntities, createWorld, interact, react } from '../game/world';
-import { movePlayer, resolve, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
+import { getRelationIntensity, movePlayer, requireRelation, resolve, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
 
 const TILE = 48;
 const MAP_X = 24;
@@ -151,7 +151,7 @@ export class OriginScene extends Phaser.Scene {
     this.socialLabel.setVisible(this.scenarioId !== 'training');
     const missions = this.world.missions.filter(item => item.status === 'active' || item.status === 'ready');
     this.socialLabel.setText([
-      `Dano: ${this.world.player.attributes.damage} | ${this.world.factions.map(f => `${f.name}: ${this.world.relations[f.id]}`).join(' | ')}`,
+      `Dano: ${this.world.player.attributes.damage} | ${this.world.factions.map(f => `${f.name}: ${getRelationIntensity(this.world, requireRelation(this.world, 'reputation', f.id, this.world.player.id).id)}`).join(' | ')}`,
       ...missions.map(mission => {
         const target = resolve(this.world, mission.targetId, 'character');
         return `${mission.name} — ${mission.status === 'ready' ? 'pronta (ready)' : `ativa (${target.position.x + 1}, ${target.position.y + 1})`}`;
@@ -164,7 +164,7 @@ export class OriginScene extends Phaser.Scene {
         return entity.label ?? entity.definition.name;
       };
       this.socialLabel.setText(this.world.entities.map(entity => {
-        const relations = this.world.socialRelations.filter(r => r.sourceId === entity.id || r.targetId === entity.id);
+        const relations = this.world.relationInstances.filter(r => r.sourceId === entity.id || r.targetId === entity.id);
         const description = relations.map(r => `${name(r.sourceId)} → ${name(r.targetId)}: ${this.world.relationDefinitions[r.definitionId].name} ${r.intensity}`).join('; ');
         const status = entity.references.hostileTo ? `hostil a ${name(entity.references.hostileTo)}` : 'neutro';
         return entity === this.world.entities[0] ? `Vítima: ${entity.hp} HP · Relações direcionais e reações abaixo` : `${entity.label}: ${description || 'sem relação'} · ${status}`;

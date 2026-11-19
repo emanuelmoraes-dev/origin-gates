@@ -1,4 +1,4 @@
-# Contrato da engine — 0.2.3
+# Contrato da engine — 0.2.3 e modelo unificado de relações
 
 ## Definições, identidade e estado
 
@@ -12,9 +12,9 @@ Os tipos compartilham somente identidade. Personagens têm HP, posição, atribu
 
 ## Configuração inicial e referências
 
-`factions.json` define as facções reutilizáveis. `scenarios.json.factions` informa `definition` e `relation` inicial. `createWorld` instancia cada facção e traduz referências de configuração (`entities[].faction` e `offer.opponent`) para IDs concretos. Neste MVP, uma definição de facção aparece uma única vez por cenário; duplicações são rejeitadas. Personagens e missões não têm essa restrição.
+`factions.json` define as facções reutilizáveis. `scenarios.json.factions` informa as definições a instanciar; os valores iniciais estão em `scenarios.json.relations`. `createWorld` instancia cada facção e traduz referências de configuração (`entities[].faction` e `offer.opponent`) para IDs concretos. Neste MVP, uma definição de facção aparece uma única vez por cenário; duplicações são rejeitadas. Personagens e missões não têm essa restrição.
 
-Cada representante recebe `factionId`. As relações do único jogador ficam exclusivamente em `world.relations[factionInstanceId]`; não são copiadas para personagens ou missões. A facção contratante é resolvida por `mission.contractorId → character.factionId → faction`. A adversária é `mission.opponentId`. Não há troca de facção durante uma missão.
+Cada representante recebe `factionId`. As reputações são relações concretas facção → jogador em `world.instances`, sem tabela numérica paralela. A facção contratante é resolvida por `mission.contractorId → character.factionId → faction`. A adversária é `mission.opponentId`. Não há troca de facção durante uma missão.
 
 IDs de definição ainda são usados para escolher o modelo de uma nova entidade. Depois da criação, referências entre entidades usam IDs de instância. Referências inexistentes, tipo incorreto, contexto de outro executor/contratante e alvos não registrados geram erro, sem fallback para outra entidade. Não há busca de alvo por definição.
 
@@ -95,17 +95,52 @@ O evento declara emissões no nível da execução, independentemente do outcome
 
 ### Relações e descoberta das regras
 
-Relações são instâncias `kind: "relation"` no mesmo registro canônico, com `id`, `definitionId`, `sourceId`, `targetId` e `intensity`. Não têm HP ou posição. `world.socialRelations` é uma visão derivada; a intensidade não é copiada para personagens. A reputação entre o jogador e facções continua em `world.relations`; ela não foi migrada nesta versão.
+Relações são instâncias `kind: "relation"` no mesmo registro canônico, com `id`, `definitionId`, `sourceId`, `targetId` e `intensity`. Não têm HP ou posição. `world.relationInstances` é uma visão derivada do registro contendo amizades e reputações; a intensidade não é copiada para personagens, facções ou missões. A antiga tabela numérica de reputações foi removida.
 
 `relations.json` declara definições reutilizáveis, por exemplo:
 
 ```json
-{ "friendship": { "id": "friendship", "name": "amizade", "reactions": ["respondToAggression"] } }
+{
+  "friendship": {
+    "id": "friendship", "name": "amizade",
+    "sourceKinds": ["character"], "targetKinds": ["character"],
+    "unique": true, "reactions": ["respondToAggression"]
+  },
+  "reputation": {
+    "id": "reputation", "name": "reputação",
+    "sourceKinds": ["faction"], "targetKinds": ["character"],
+    "unique": true, "intensity": { "min": 0, "max": 100 }, "reactions": []
+  }
+}
 ```
 
-Em `scenarios.json`, `entities[].key` declara símbolos locais; `player` é reservado para o jogador. `socialRelations` contém `{ "definition": "friendship", "source": "A", "target": "victim", "intensity": 90 }`. Todos os personagens são criados antes da resolução dos símbolos. Símbolos ausentes/duplicados são erros; nenhum ID fixo de instância é escrito nos dados. `label` é apenas apresentação.
+Em `scenarios.json`, `entities[].key` declara símbolos locais; `player` é reservado para o jogador. As facções também disponibilizam seus IDs de definição como símbolos locais, resolvidos para as instâncias criadas. `relations` contém tanto `{ "definition": "friendship", "source": "A", "target": "victim", "intensity": 90 }` quanto `{ "definition": "reputation", "source": "government", "target": "player", "intensity": 50 }`. Todas as facções e personagens são criados antes das relações. Símbolos ausentes/duplicados são erros; nenhum ID fixo de instância é escrito nos dados. `label` é apenas apresentação.
 
-`createRelation` resolve os dois personagens, registra a instância e inscreve suas regras em `world.factSubscriptions[rule.on]`, com IDs da relação e da regra. Não cria relação inversa. Para `friendship`, origem é quem sente amizade; destino é quem recebe esse sentimento. Esse significado está na definição/regra, não em uma condicional específica no TypeScript.
+`createRelation` valida categorias das pontas, intensidade, unicidade e existência das regras antes de consumir um ID, registrar a instância ou criar inscrições em `world.factSubscriptions[rule.on]`. Relações sem regras reativas não criam inscrições. Não cria relação inversa. A origem é quem possui a avaliação, sentimento ou vínculo; o destino é a entidade avaliada ou referenciada. Assim, A → B representa a amizade que A sente por B, e governo → jogador representa a avaliação que o governo possui do jogador. A opinião inversa seria outro vínculo independente.
+
+### Contrato comum de consulta e alteração
+
+`sourceKinds` e `targetKinds` declaram as categorias permitidas para as instâncias concretas. Facções não recebem HP, posição ou atributos de combate. Condições de sobrevivência/distância e operações sobre personagens continuam resolvendo `character`; usar uma facção nesses papéis gera erro.
+
+`unique: true` rejeita outra relação com a mesma combinação `definitionId + sourceId + targetId`, sem deixar registros ou inscrições parciais. Isso vale para amizade e reputação. Tipos diferentes podem conectar as mesmas pontas. `unique: false` permite múltiplas instâncias; este contrato é testado com dados mínimos, sem implementar novos contratos ou gameplay. Todas as relações existentes são correntes; não foi adicionado ciclo de ativação/arquivamento.
+
+`findRelation(world, definitionId, sourceId, targetId)` retorna a relação ou `undefined`, validando definição e pontas sem criar vínculos. `requireRelation` exige exatamente uma relação e lança erro se estiver ausente. Se um tipo não único tiver várias correspondências, a consulta singular rejeita a ambiguidade; a alteração deve usar o ID concreto. Ausência é diferente de intensidade zero e nunca presume um valor inicial.
+
+`getRelationIntensity`, `setRelationIntensity` e `addRelationDelta` trabalham por ID de instância, validam referências e compartilham os limites do tipo. Leituras rejeitam intensidade inválida; atribuições e criação limitam valores finitos ao intervalo declarado. Deltas são somados ao valor atual e limitados pelo mesmo mecanismo. NaN, infinitos e soma que transborde para infinito são rejeitados antes da alteração. Para amizade, não há intervalo imposto além de intensidade finita; para reputação, o intervalo é 0–100. `intensity` ausente na definição significa ausência de limites, não ausência de valor na instância.
+
+Essas funções são os mecanismos internos mínimos da migração, não uma nova API pública abrangente. A consulta percorre a visão derivada; não foi adicionado índice numérico paralelo. Os estados continuam acessíveis em TypeScript; escritas diretas podem contornar as funções, portanto os limites não constituem congelamento ou proteção universal contra mutação externa.
+
+### Migração da reputação e adaptadores preservados
+
+O cenário 02 declara duas relações `reputation`, governo → jogador e resistência → jogador, ambas com intensidade inicial 50. `factions[].relation` foi removido e as amizades do cenário 03 passaram de `socialRelations` para a mesma lista de configuração `relations`. Não há leitura/escrita dupla nem alias para a estrutura antiga.
+
+O valor declarativo `{ "source": "relation", "faction": "faction" }` e a operação `{ "type": "relation", "faction": "opponent", "amount": -15 }` foram preservados como **adaptadores de contexto de missão**. Eles resolvem a facção pelo papel, localizam `reputation` com origem nessa facção e destino no ator da execução, e delegam leitura/delta às funções comuns. A ausência dessa reputação obrigatória é erro de configuração/integridade, sem valor zero implícito. O modelo permite reputações de outros personagens sem armazená-las no jogador global.
+
+Os campos `min`/`max` da antiga operação de reputação foram removidos dos tipos e JSONs: os limites agora pertencem à definição da relação. Os deltas +20/−15, o limiar 20, as faixas de recompensa e o teto de dano continuam nos eventos. A ordem das operações preserva a recompensa calculada após a mudança de reputação. `relationIntensity` das reações utiliza a mesma função de leitura comum.
+
+`character.factionId`, os IDs dos participantes da missão e `character.references.hostileTo` continuam referências diretas. Não são vínculos numéricos independentes e não foram transformados em relações. Permanecem especializados a resolução `faction/opponent`, as regras de missão, a UI e o significado visual de `hostileTo`.
+
+Foram eliminados o armazenamento numérico especial, a aritmética separada de reputação e a ambiguidade de vínculos duplicados nos tipos únicos. Permanecem os débitos de mutabilidade externa, reindexação de regras, fatos locais à memória, conclusão de missões por `react` e ausência de rollback completo. Uma relação pode ser rejeitada sem alterações parciais, mas um evento com várias operações ainda não é uma transação. Não foi introduzida infraestrutura para remoção, histórico, contratos, registro programático ou auditoria.
 
 `dispatchFacts` consulta somente o índice do tipo recebido e resolve cada relação inscrita. Não busca regras em missões ou exclusivamente na vítima, nem percorre todos os personagens por ataque. A fonte de inscrições atual são relações; futuras fontes podem acrescentar seus próprios contextos ao despacho. O índice atual permite refinamento futuro por participante sem alterar o produtor dos fatos. Mudanças em associações de regras ou em `on` após a inscrição exigirão reconstrução do índice; limiares e alcance são lidos diretamente dos dados das regras a cada avaliação.
 
