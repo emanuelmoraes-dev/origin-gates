@@ -38,7 +38,7 @@ export class OriginScene extends Phaser.Scene {
   init(data: { scenario?: string }) { this.scenarioId = data.scenario ?? this.scenarioId; }
 
   create() {
-    this.world = createWorld(this.scenarioId);
+    this.world = createWorld(this.scenarioId, { enabled: import.meta.env.DEV });
     if (import.meta.env.DEV) {
       let active = true;
       let dispose: (() => void) | undefined;

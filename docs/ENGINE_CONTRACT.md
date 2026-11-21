@@ -1,4 +1,4 @@
-# Contrato da engine — 0.3.0: observabilidade narrativa
+# Contrato da engine — 0.3.1: exploração e exportação de diagnósticos
 
 ## Definições, identidade e estado
 
@@ -227,7 +227,7 @@ Recusas legítimas têm status `rejected`/`unavailable`; falhas técnicas geram 
 
 Durante `npm run dev`, o botão **Abrir inspetor** monta o consumidor HTML/TypeScript em `src/dev/AuditPanel.ts`. O painel permite filtrar categorias de registro, buscar IDs, selecionar ocorrências e ver JSON/trace/pai, listar instâncias por tipo e inspecionar relações conectadas. O rodapé mostra descartes e erros de consumidores. Pais ausentes por retenção/limpeza são indicados. **Limpar histórico** só limpa diagnósticos; **Atualizar estado** consulta novamente as instâncias, inclusive após escritas externas não auditadas.
 
-O painel atualiza por assinatura, agrupa renderizações em microtask e cancela a inscrição ao reiniciar/trocar cenário. Eventos de teclado dentro de seus controles não propagam ao jogo. A importação dinâmica está condicionada a `import.meta.env.DEV`; o build de produção não monta nem importa o painel. Auditoria de núcleo pode continuar habilitada sem interface ou ser desligada com `{ enabled: false }`.
+O painel atualiza por assinatura, agrupa renderizações em microtask e cancela a inscrição ao reiniciar/trocar cenário. Eventos de teclado dentro de seus controles não propagam ao jogo. A importação dinâmica está condicionada a `import.meta.env.DEV`; o build de produção não monta nem importa o painel. Desde a 0.3.1, a cena chama `createWorld(id, { enabled: import.meta.env.DEV })`: produção também deixa de coletar registros por padrão. `AuditLog` e `createWorld` preservam seus padrões habilitados para consumidores TypeScript; estes podem ativar auditoria explicitamente sem depender da política da cena.
 
 ### Cobertura verificável e caminhos não interceptados
 
@@ -250,3 +250,61 @@ Exports de baixo nível `executeEvent`, `applyOperations`, `matches` e `movePlay
 Os testes do serviço e da engine verificam retenção, isolamento, snapshots, causalidade, criação, RNG, recusas, erros parciais, helpers e legado, além de comparar auditoria ligada/desligada nos três cenários. O painel tem verificação de tipos/build; a infraestrutura atual não inclui um teste automatizado de DOM/Phaser ou uma prova visual de layout/interações no navegador.
 
 Débitos reduzidos: ausência de histórico, opacidade das mutações oficiais e falta de inspeção destacada. Permanecem: escrita externa mutável, falhas parciais, fatos identificados por objeto, reindexação e conclusão de missões separada. Limitações novas do diagnóstico: retenção pode remover ancestrais e o painel depende de atualização manual para alterações não auditadas. Não há registro separado de débitos no repositório; esses itens devem ser transferidos ao registro externo do projeto, quando aplicável.
+
+## Exploração e exportação — 0.3.1
+
+Esta versão modifica somente as ferramentas de consulta/apresentação e a política de coleta na cena. Não muda instâncias, eventos, sorteios, regras ou o armazenamento do `AuditLog`.
+
+### Exportação schema 1
+
+**Exportar diagnóstico JSON** usa `createDiagnosticExport(world)` em `src/dev/diagnostics.ts`. A função lê `audit.stats()`, `audit.records()` e `createInspector(world).list()` sincronamente, sem executar comandos, registrar acontecimentos, limpar histórico ou reiniciar o mundo. O resultado é destacado/congelado; registros anteriores e fotografias exportadas não mudam depois.
+
+```json
+{
+  "schemaVersion": 1,
+  "scenarioId": "training",
+  "worldId": "world_1",
+  "exportedAt": "2026-11-21T15:00:00.000Z",
+  "audit": {
+    "stats": {
+      "worldId": "world_1", "enabled": true, "capacity": 1000,
+      "retained": 0, "discarded": 0, "sequence": 12, "observerErrors": 0
+    },
+    "records": []
+  },
+  "instances": []
+}
+```
+
+O exemplo ilustra os campos; em uma partida real `instances` contém as fotografias atuais mesmo após limpar os registros. `schemaVersion` versiona o formato diagnóstico; `scenarioId` identifica o cenário; `worldId` identifica o namespace diagnóstico; `exportedAt` é um timestamp ISO UTC apenas de metadado, sem papel na ordem lógica. `audit.stats` conserva as estatísticas públicas, incluindo descartes por capacidade na janela atual e eventual `lastObserverError`; `audit.records` conserva todos os registros retidos em ordem de sequência e seus IDs, valores e referências causais. `instances` contém os snapshots com `id`, `definitionId`, `kind` e `properties`. Se o mundo não disponibilizar serviço de auditoria, `worldId`/`stats` são `null` e `records` é vazio; o inspetor continua disponível.
+
+Os filtros visuais nunca são parâmetros da exportação. Não são serializados o serviço interno, listeners, callbacks, WeakMaps/WeakSets ou o mundo inteiro. Marcadores de `undefined`/números especiais dos registros seguem o contrato 0.3.0. O arquivo é diagnóstico, não um savegame nem formato de importação/replay.
+
+O painel cria um `Blob` JSON e um object URL, solicita download por um link nativo e remove o link. O nome contém projeto, cenário, mundo e instante, sanitizados e com componentes limitados para evitar nomes inválidos. URLs são revogadas após a solicitação e timers/URLs pendentes são liberados na desmontagem. Falhas de preparação/solicitação aparecem no painel sem alterar a partida. As APIs nativas não permitem confirmar que o usuário realmente salvou o arquivo ou distinguir cancelamento/bloqueio silencioso pelo navegador; a mensagem informa apenas **Download solicitado**.
+
+### Lista e árvore causal
+
+O seletor **Visualização** alterna **Cronológico** e **Árvore causal**. A lista conserva a ordem de `sequence`. A árvore usa `buildCausalTree` de `src/dev/audit-view.ts`, independente de DOM e Phaser: agrupa por `traceId` e conecta somente IDs de pai explícitos, retidos e da mesma cadeia/mundo. Grupos são ordenados pela primeira sequência retida; raízes e irmãos, por `sequence`. Compartilhar participante, proximidade temporal ou trace não implica vínculo pai/filho.
+
+Cada registro, incluindo `start`, `point` e `end`, permanece acessível com seu ID original e detalhes; não se afirma que cada fase é outra ação narrativa. A profundidade é mostrada por indentação. `details/summary` nativos permitem recolher cadeias e descendentes; **Expandir tudo**/**Recolher tudo** controlam a árvore inteira. Registros de falha e recusa têm distinção discreta. **Detalhes #N** seleciona uma ocorrência sem acionar sua expansão. Seleção e estados de abertura são preservados durante atualizações e alternância de visão, enquanto os IDs continuarem retidos.
+
+Um pai ausente produz uma raiz parcial identificada, conservando o `parentId` original. Pais em outra cadeia/mundo, IDs duplicados e ciclos são sinalizados; a visualização não tenta corrigi-los no histórico. Para um ciclo, interrompe-se uma aresta apenas na árvore e conserva-se cada registro. Construção, poda e renderização usam percursos iterativos para evitar recursão infinita ou overflow em cadeias profundas.
+
+O rodapé conserva o contador de descartes e o aviso superior mostra relações causais ausentes/inconsistentes em todo o histórico retido, independentemente do filtro. Um histórico filtrado ou truncado nunca é apresentado como execução completa. Limpar esvazia ambas as visões; uma seleção removida por limpeza/evicção informa que o registro não está mais retido, em vez de manter uma cópia oculta ou inventar detalhes.
+
+### Semântica dos filtros
+
+- **ID de instância** aceita parte do ID. O padrão **cadeia relacionada** encontra traces com pelo menos um registro retido contendo esse ID em `instanceIds` e permite mostrar todos os registros dessas cadeias, incluindo resultados/operações sem participante direto. Só a camada de consulta faz essa associação; `instanceIds` não é modificado.
+- **participação direta** restringe as correspondências aos registros cujos próprios `instanceIds` combinam com a busca.
+- **Categoria** restringe a categoria das correspondências. A descoberta de traces relacionados à instância considera o histórico completo retido, antes dessa restrição, para que um filtro `outcome` ainda encontre resultados cujo participante esteja declarado no comando.
+- **traceId** é correspondência exata, evitando confundir `trace:2` com `trace:20`. **Ver cadeia selecionada** preenche esse campo e limpa categoria/instância; a seleção original permanece disponível.
+- Na lista, aparecem somente correspondências. Na árvore, acrescentam-se seus ancestrais explícitos como **contexto**, com identificação visual; irmãos não correspondentes são omitidos. Novos ramos filtrados abrem inicialmente para revelar as correspondências, respeitando escolhas de recolhimento já feitas.
+- A lista de instâncias atuais usa seu filtro de categoria/ID, sem reconstruir o estado histórico. Filtros de categoria de registro e trace não restringem o estado atual.
+
+Se a única participação direta de uma instância foi descartada, não se pode deduzir sua associação a registros restantes apenas pela ausência de dados. Os filtros não reconstroem ancestrais nem participantes perdidos. Exportar continua incluindo todo o histórico retido.
+
+### Validação e limitações mantidas
+
+Testes sem Phaser cobrem schema, serialização, fotografias destacadas, exportação vazia/truncada/sem filtro, construção por pai, ordenação, isolamento de traces, ciclos, ancestralidade filtrada e consulta do registro selecionado nas duas visões. A suíte anterior continua protegendo os três cenários e a paridade de auditoria ligada/desligada. O build verifica a política da cena e a ausência do painel em produção. Download real, comportamento visual de expansão/recolhimento, alternância após reinícios e teclado continuam itens de validação manual no navegador, sem adicionar framework DOM.
+
+Permanecem sem resolução nesta versão: falhas na preparação dos próprios registros, acúmulo potencial de notificações, consumidores que geram novos registros recursivamente, escritas externas que contornam a instrumentação, falhas parciais/ausência de atomicidade e reações de missão separadas. A exportação registra o estado atual e o histórico ainda disponível; não recupera informações descartadas e não oferece garantias transacionais.

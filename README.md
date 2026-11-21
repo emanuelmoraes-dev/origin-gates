@@ -1,4 +1,4 @@
-# Origin Gates — MVP 0.3.0: Observabilidade narrativa
+# Origin Gates — MVP 0.3.1: Exploração e exportação de diagnósticos
 
 Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
 
@@ -23,7 +23,9 @@ npm run typecheck
 npm run build
 ```
 
-Em desenvolvimento, use **Abrir inspetor**, no canto superior direito. O painel mostra histórico em tempo real, filtros por categoria/ID, detalhes da cadeia causal e fotografias das instâncias. Limpar o histórico não altera a partida. O histórico retém até 1000 registros por padrão e informa descartes. Ao trocar de cenário, o painel se conecta ao mundo novo. O painel não é carregado no build de produção.
+Em desenvolvimento, use **Abrir inspetor**, no canto superior direito. Alterne **Cronológico** / **Árvore causal**, expanda/recolha os registros e selecione seus detalhes. A busca por ID de instância inclui a cadeia relacionada por padrão; o modo de participação direta e o filtro exato de `traceId` permitem restringir a investigação. Na árvore, ancestrais são preservados como contexto. **Ver cadeia selecionada** mostra a cadeia inteira de uma ocorrência.
+
+**Exportar diagnóstico JSON** baixa todos os registros retidos (sem filtros), estatísticas/descartes e fotografias das instâncias, no schema 1. O nome identifica cenário, mundo e instante. Limpar o histórico não altera a partida. O histórico retém até 1000 registros por padrão, informa descartes e identifica pais ausentes. Ao trocar de cenário, o painel se conecta ao mundo novo. Em produção, a cena não carrega o painel e desativa a coleta; consumidores TypeScript ainda podem ativá-la explicitamente.
 
 O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`, além de `createInspector(world).list(kind?)` / `find(id)`. O [contrato técnico](docs/ENGINE_CONTRACT.md#auditoria-e-inspeção--030) documenta os contextos causais, erros parciais e a matriz de cobertura. Escritas diretas externas permanecem sem auditoria; os snapshots do inspetor não permitem alterar o mundo.
 
@@ -37,6 +39,7 @@ O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`,
 - `src/game/reactions.ts`: despacho síncrono dos fatos usando inscrições por tipo, condições e operações da engine existente.
 - `src/game/audit.ts` e `inspection.ts`: serviço de diagnóstico, correlação causal e fotografias somente leitura.
 - `src/dev/AuditPanel.ts`: consumidor HTML/TypeScript habilitado apenas em desenvolvimento.
+- `src/dev/audit-view.ts` e `diagnostics.ts`: consultas contextuais, árvore causal e exportação destacada, sem DOM/Phaser.
 - `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
 - `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
 - `src/data/factions.json`: definições das facções sem representação no mapa.

@@ -28,6 +28,15 @@
 .og-audit-row[aria-pressed="true"] { border-color: #77cf75; background: #31483b; }
 .og-audit-details { margin: 0; padding: 9px; background: #10191e; font: 11px/1.45 ui-monospace, monospace; overflow: auto; min-height: 110px; flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
 .og-audit-causal { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #b9d4c0; font-size: 11px; }
+.og-audit-warning { margin: 3px 0; color: #efc174; overflow-wrap: anywhere; }
+.og-audit-trace { margin: 5px 0; }
+.og-audit-trace > summary { font-weight: 600; overflow-wrap: anywhere; cursor: pointer; }
+.og-audit-tree-node { margin: 4px 0 4px 10px; padding-left: 7px; border-left: 1px solid #59686c; }
+.og-audit-tree-node summary { white-space: pre-wrap; overflow-wrap: anywhere; cursor: pointer; }
+.og-audit-tree-node summary button { margin-left: 6px; padding: 2px 5px; }
+.og-audit-context > small { display: block; color: #9eabae; }
+.og-audit-root .og-audit-failed { border-left: 3px solid #ee7777; }
+.og-audit-root .og-audit-rejected { border-left: 3px solid #e9bd6d; }
 .og-audit-stats, .og-audit-note { margin: 0; font-size: 11px; color: #b0bcbf; }
 @media (max-width: 640px) {
   .og-audit-columns { grid-template-columns: 1fr; min-height: auto; }
