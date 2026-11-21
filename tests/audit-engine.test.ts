@@ -1,10 +1,11 @@
+import { worldMap } from '../src/content/map';
 import { describe, expect, it, vi } from 'vitest';
 import { AuditLog, type AuditRecord } from '../src/game/audit';
 import { applyOperations, executeEvent, type EventDefinition } from '../src/game/events';
 import { createInspector } from '../src/game/inspection';
 import { dispatchFacts } from '../src/game/reactions';
-import { addRelationDelta, createEntity, createIdentityStore, createRelation, movePlayer, requireRelation, resolve, setRelationIntensity, worldMap, type GameState } from '../src/game/state';
-import { createWorld, events, executeCommand, interact, react } from '../src/game/world';
+import { addRelationDelta, createEntity, createIdentityStore, createRelation, movePlayer, requireRelation, resolve, setRelationIntensity, type GameState } from '../src/game/state';
+import { createWorld, events, executeCommand, interact, react } from '../src/content/originGates';
 
 const data = (record: AuditRecord) => (record.data ?? {}) as Record<string, unknown>;
 const records = (world: GameState) => world.audit!.records();

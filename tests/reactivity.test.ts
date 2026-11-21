@@ -1,8 +1,9 @@
+import { worldMap } from '../src/content/map';
 import { describe, expect, it } from 'vitest';
 import { executeEvent, type Fact, type ReactionDefinition } from '../src/game/events';
 import { dispatchFacts } from '../src/game/reactions';
-import { createEntity, createRelation, resolve, worldMap } from '../src/game/state';
-import { createWorld, events, executeCommand, interact, scenarios } from '../src/game/world';
+import { createEntity, createRelation, resolve } from '../src/game/state';
+import { createWorld, events, executeCommand, interact, scenarios } from '../src/content/originGates';
 
 function setup() {
   const world = createWorld('social');

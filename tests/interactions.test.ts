@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { EventDefinition } from '../src/game/events';
 import { selectInteraction } from '../src/game/interactions';
 import { createEntity, type InteractionBinding, type ObjectDefinition } from '../src/game/state';
-import { createWorld, events, interact } from '../src/game/world';
+import { createWorld, events, interact } from '../src/content/originGates';
 
 const feedback = { color: '#ffffff', durationMs: 0, message: 'ok' };
 function event(id: string, damage = 1): EventDefinition {

@@ -308,3 +308,130 @@ Se a única participação direta de uma instância foi descartada, não se pode
 Testes sem Phaser cobrem schema, serialização, fotografias destacadas, exportação vazia/truncada/sem filtro, construção por pai, ordenação, isolamento de traces, ciclos, ancestralidade filtrada e consulta do registro selecionado nas duas visões. A suíte anterior continua protegendo os três cenários e a paridade de auditoria ligada/desligada. O build verifica a política da cena e a ausência do painel em produção. Download real, comportamento visual de expansão/recolhimento, alternância após reinícios e teclado continuam itens de validação manual no navegador, sem adicionar framework DOM.
 
 Permanecem sem resolução nesta versão: falhas na preparação dos próprios registros, acúmulo potencial de notificações, consumidores que geram novos registros recursivamente, escritas externas que contornam a instrumentação, falhas parciais/ausência de atomicidade e reações de missão separadas. A exportação registra o estado atual e o histórico ainda disponível; não recupera informações descartadas e não oferece garantias transacionais.
+
+## Independência e construção programática — 0.4.0
+
+### Fronteiras e entrada pública
+
+`src/game/index.ts` é a entrada pública TypeScript. Seu grafo de dependências permanece inteiramente em `src/game`, sem JSON, adaptador de conteúdo, DOM ou Phaser. Nenhum identificador de cenário decide a montagem no núcleo; `scenarioId` é apenas metadado diagnóstico. O mapa retangular de `land`/`water` é fornecido pelo consumidor, copiado e congelado. Movimento continua cardinal, bloqueado por água, limites e personagens vivos.
+
+`src/content/originGates.ts` carrega os JSONs atuais, registra um lote e resolve exclusivamente ali os símbolos declarativos (`player`, facções, `A`, `victim` etc.). `src/content/map.ts` fornece o mapa fixo preservado. A cena e o seletor passam a importar esse adaptador. Não há segundo interpretador: adaptador e API usam `createWorldState`, `createCharacterInstance`, `createFactionInstance`, `createRelation` e os mesmos caminhos de execução. `spawnTarget` também usa `createCharacterInstance`, incluindo automaticamente seu personagem em `world.entities`.
+
+APIs públicas:
+
+| Entrada | Contrato |
+|---|---|
+| `createEngine()` | Cria um registro privado, inicialmente vazio. |
+| `engine.registerDefinitions(batch)` | Registra um lote validado de definições. |
+| `engine.definitions` | Catálogo congelado, organizado por categoria e ID. |
+| `engine.createWorld({ map, player, scenarioId?, audit?, missions? })` | Cria mundo isolado, jogador e estruturas auxiliares. `player` é um `CharacterConfig`. `missions` habilita um subconjunto; omitido, habilita todas as missões registradas. |
+| `world.registerDefinitions(batch)` | Registro aditivo local ao mundo, entre execuções. |
+| `world.createCharacter({ definitionId, position, label?, factionId?, interactions?, offer? })` | Registra personagem e o inclui no mapa automaticamente; retorna handle congelado. |
+| `world.createFaction(definitionId)` | Instancia facção e retorna handle. |
+| `world.createRelation({ definitionId, sourceId, targetId, intensity })` | Valida pontas/unicidade/intensidade e registra instância e inscrições reativas; retorna handle. |
+| `world.player`, `world.map`, `world.definitions` | Handle do jogador, mapa e catálogo imutáveis. |
+| `world.move(actorId, dx, dy)` | Executa movimento auditado, retornando aceitação/recusa. |
+| `world.interact({ actorId, targetId, random? })` | Seleciona a primeira associação cujo `when` é aplicável e executa/valida o evento. |
+| `world.command({ eventId, actorId, targetId, random?, context? })` | Executa evento explícito, revalidando `when` e `conditions`, sem procurar associações. |
+| `world.react({ cause?, random? }?)` | Executa somente o polling legado de missões. `cause` é um resultado anterior deste mundo e liga explicitamente a cadeia causal. |
+| `world.inspect.list(kind?)`, `.find(id)` | Fotografias destacadas, congeladas, do registro canônico. |
+| `world.diagnostics(now?)`, `world.audit` | Exportação schema 1 e serviço diagnóstico existente. |
+
+Handles têm apenas `id`, `definitionId`, `kind`. IDs concretos são únicos **dentro de cada mundo**, não globalmente; cada referência é resolvida no mundo receptor. O consumidor deve conservar o mundo junto ao ID. Resultados de comandos também são cópias congeladas; não expõem referências vivas de instâncias ou definições. Não há API pública para editar arbitrariamente HP, atributos, referências ou índices. A classe `NarrativeWorld` mantém o estado em campo privado JavaScript. Isso não constitui encapsulamento universal do repositório: imports diretos de módulos internos e o adaptador usado pela apresentação ainda permitem acessar `GameState` mutável.
+
+### Exemplo completo e adição posterior
+
+O arquivo `examples/programmatic-world.ts` contém esta construção e é executado por `tests/examples.test.ts`. Pode ser importado por um consumidor TypeScript/Vite sem carregar Phaser:
+
+```ts
+import { createEngine } from './src/game'; // ajuste relativo ao consumidor
+
+const engine = createEngine();
+engine.registerDefinitions({ characters: [
+  { id: 'citizen', name: 'Cidadão', maxHp: 100, color: '#ffffff' },
+] });
+const world = engine.createWorld({
+  map: [['land', 'land'], ['water', 'land']],
+  player: { definitionId: 'citizen', position: { x: 0, y: 0 } },
+});
+const other = world.createCharacter({
+  definitionId: 'citizen', position: { x: 1, y: 0 },
+});
+
+// Em um momento posterior, entre execuções narrativas:
+world.registerDefinitions({ relations: [{
+  id: 'religiousDevotion', name: 'Devoção', sourceKinds: ['character'],
+  targetKinds: ['character'], unique: true, reactions: [],
+}] });
+const relation = world.createRelation({
+  definitionId: 'religiousDevotion', sourceId: world.player.id,
+  targetId: other.id, intensity: 90,
+});
+console.log(world.inspect.find(relation.id));
+```
+
+O exemplo só instancia uma relação estrutural sem comportamento novo. A prova completa dos três cenários, incluindo eventos e regras declarativas, está em `tests/fixtures/programmatic.ts`: literais TypeScript independentes dos dados de produção. `tests/programmatic.test.ts` usa somente a API; `tests/scenario-equivalence.test.ts` compara essas construções com o adaptador JSON em sequências idênticas, incluindo movimento real e RNG controlado. Não existem dois conjuntos de conteúdo de produção.
+
+### Registro, propriedade e validação
+
+`DefinitionBatch` aceita arrays opcionais `characters`, `factions`, `relations`, `events`, `reactions`, `missions`. IDs têm namespace por categoria. Qualquer duplicata na mesma categoria é erro, inclusive uma definição idêntica e duplicatas dentro do lote. Não há substituição/remoção. Todos os dados são clonados e congelados recursivamente antes de pertencer ao registro; alterações posteriores no objeto original não afetam a engine. Não se aceitam ciclos, funções, accessors, instâncias de classes ou números não finitos. A engine não congela os objetos do chamador.
+
+O registro constrói um candidato com o catálogo anterior e todo o lote, valida esse candidato e só então o publica. Referências futuras **dentro do mesmo lote** funcionam: objeto → evento, oferta → missão/personagem/facção, missão → evento e relação → reação. Referências ausentes em outros lotes ainda não registrados são erro. Um lote inválido não deixa parte de suas definições visível. Essa atomicidade é específica do registro; não implica transações sobre operações narrativas.
+
+A validação runtime cobre IDs não vazios, categorias conhecidas, HP máximo positivo, nomes/cores dos objetos, flags, posições inteiras, associações/contexto de interação, referências de ofertas, categorias/unicidade/limites de relações, condições/operandos/referências/operações reconhecidos, estados de missão, pesos positivos finitos, total finito, feedback e emissão de fatos. `reputation` continua sendo referência especializada exigida quando uma operação/valor de reputação é registrada. Não é um schema universal: não prova antecipadamente a disponibilidade de todo contexto de execução ou a validade narrativa de qualquer combinação de operações. Campos adicionais de dados simples não constituem novas instruções. Falhas de contexto/integridade continuam exceções, com possibilidade de efeitos anteriores permanecerem aplicados.
+
+Preservadas as normalizações: intensidade finita é limitada apenas quando a definição declara `intensity.min/max`; sem limites, permanece como fornecida. Intensidade negativa não é automaticamente proibida. Dano continua limitado pelo interpretador para não produzir HP negativo, e recompensas continuam seguindo a primeira faixa inclusiva e o teto declarado. A criação valida posição inteira, mas não reserva tiles nem impõe uma política nova de spawn/ocupação: configurar um personagem fora de terra ou sobre outro continua responsabilidade do montador. A movimentação mantém suas verificações espaciais.
+
+### Isolamento e extensibilidade temporal
+
+Cada engine possui seu registro; cada mundo recebe um fork do catálogo imutável atual. Definições congeladas podem compartilhar identidade em memória; as tabelas e futuras adições são locais. Registrar na engine posteriormente só afeta mundos criados depois. Registrar num mundo não modifica o registro da engine ou de outros mundos.
+
+`world.registerDefinitions` é permitido somente entre execuções síncronas de interação, comando e reação legada. Um contador protegido por `try/finally` cobre também o despacho síncrono dentro do comando; tentativa de registro a partir do RNG é rejeitada, e a guarda é liberada mesmo após exceções. A adição não executa regras, não reproduz fatos anteriores, não cria instâncias e não altera inscrições das relações existentes. Uma relação de definição inédita pode então ser criada entre instâncias já presentes; sua criação instala as inscrições daquela relação. Novas definições de missão passam a ser habilitadas; missões anteriores explicitamente desabilitadas na configuração inicial permanecem assim.
+
+Não há hot reload, migração, atualização concorrente ou promessa de segurança contra código TypeScript malicioso. RNG é o ponto de controle probabilístico, não um callback declarativo de comportamento. Não foram introduzidos callbacks de reação, novos fatos, condições ou operações.
+
+### Contexto de execução e especializações preservadas
+
+Interações identificam o ator por `actorId`, inclusive quando ele não é o jogador. A lista de associações da instância substitui a da definição integralmente, inclusive `[]`. Cada associação pode pedir `{ context: { offer: 'target' } }`: a engine usa a oferta concreta do alvo e encontra a missão pendente para **aquele ator e contratante**. As recusas de `conditions` continuam resultados, sem fallback para outro evento ou ataque.
+
+Comandos explícitos precisam solicitar `context: { offer: 'target', missionId? }` quando o evento depende de missão/oferta. Exemplo: `world.command({ eventId: 'deliver', actorId, targetId: contractorId, context: { offer: 'target', missionId }, random: () => 0 })`. `missionId` é validado contra contratante/executor pelo interpretador. Omitido, é selecionada a missão pendente do par ator/contratante. Não existe contexto arbitrário fornecido pelo consumidor. `offer.opponentId` e `factionId` são IDs de facções concretas; o núcleo não resolve nomes simbólicos nem escolhe uma instância por ID de definição. Definição com template `offer` exige oferta concreta ao instanciar o representante; overrides de oferta também passam pelas mesmas validações. A oferta deve referenciar missão habilitada neste mundo.
+
+Comandos admitidos produzem os fatos declarados e os despacham automaticamente. Fatos mantêm `type`, `actorId`, `targetId`; relações já inscritas selecionam regras por tipo, resolvem `relation.source`/`relation.target`, avaliam condições e aplicam as operações existentes. Nada foi migrado do polling de missões para esse despacho. Estados/status, ofertas, `spawnTarget`, recompensa por faixas, papéis facção/oponente e a definição estrutural `reputation` continuam especializações temporárias. Missões continuam sendo criadas pelas operações, sem fábrica pública arbitrária.
+
+### Diagnóstico e cobertura dos caminhos de criação/mutação
+
+Registro anterior à existência de um mundo é validado sem criar histórico ou mundo artificial. Ao criar um mundo auditado, um registro `definition/attached` identifica o catálogo recebido, sem inventar os acontecimentos pré-mundo. Adições no mundo usam `definition/registered`; erros de registro geram falhas diagnósticas sem publicar o candidato. O painel inclui a categoria `definition`. O schema da exportação permanece 1; a implementação pura foi movida para `src/game/diagnostics.ts`, com reexport compatível em `src/dev/diagnostics.ts`.
+
+| Caminho atual | Cobertura e limites |
+|---|---|
+| `DefinitionRegistry.register` associado a mundo | Tentativa, IDs/categorias confirmados e falhas; catálogo, views e missões habilitadas atualizados como configuração. Registro pré-mundo não tem histórico. |
+| `createWorldState` | Criação, catálogo anexado, mapa e jogador configurados; inicialização das listas/índices é parte da criação. |
+| `identity` / `nextId++`, `registerInstance` | Alocação com contador e uma criação confirmada por instância, separados dos IDs diagnósticos. |
+| `createCharacterInstance`, incluindo jogador, adaptador, API e `spawnTarget` | Criação canônica; mutações de `label`, `factionId`, `offer`; integração automática na lista de personagens do mapa. |
+| `createFactionInstance`, `createRelation` | Criação canônica; pontas e intensidade no snapshot inicial; inscrições por fato registradas. |
+| Missão em `spawnTarget` | Criação canônica e atualização de `ctx.missionId` auditadas; personagem usa a fábrica compartilhada. |
+| Operações `damage`, `attributeReward`, `setReference`, `missionStatus` | Mutações de HP, atributos, referências e status com anterior/posterior; operações sem mudança permanecem identificadas. |
+| `setRelationIntensity`, `addRelationDelta` | Setter instrumentado preservado; delta é ancestral, sem duplicar a mutação. |
+| `movePlayer`, `world.move`, cena | Movimento/recusa; scope fornecido pelos caminhos públicos e pela cena. |
+| `dispatchFacts`: `processedFacts`, inscrições e deduplicação | Consumo/decisões registrados; deduplicação temporária não vira estado narrativo. |
+| `react` legado e comandos pela API | Decisões, operações, falhas e RNG; resultados destacados conservam a associação causal para `react({cause})`. |
+| Configuração simbólica do adaptador | Resolvida antes das fábricas; configuração final do mapa registrada. Mapas de aliases locais não são estado canônico. |
+| Renderer, flashes, seleção, temporizadores, painel | Estado visual/consulta, fora da auditoria narrativa. |
+| Escritas externas por imports internos, registro/listas/objetos mutáveis | **Não interceptadas**; a fachada pública reduz a exposição, mas não altera essa limitação dos módulos internos. |
+
+Helpers de baixo nível sem scope/contexto continuam sem canal de auditoria, como descrito na 0.3.0. A instrumentação não torna o processamento transacional: falhas parciais, preparação dos próprios registros e consumidores assíncronos conservam suas limitações. Não se afirma cobertura universal de mutações externas.
+
+### Evidências, débitos e validação manual
+
+Os 157 testes anteriores foram preservados; adaptações restringem-se aos imports de conteúdo/mapa, agora em `src/content`. As novas provas verificam registro válido/inválido/atômico, propriedade dos dados, duplicatas, referências concretas, isolamento, integração no mapa, adições sem retroatividade/reindexação, proteção durante comandos e polling legado, personagens com ator não jogador, paridade dos três cenários, RNG, causalidade, snapshots/exportação e auditoria ligada/desligada. `tests/independence.test.ts` percorre imports transitivos de **todos** os módulos do núcleo, das provas programáticas e do exemplo; rejeita conteúdo, Phaser, JSON e dependências dinâmicas nessa fronteira. Isso complementa a execução real sem navegador; não prova independência de APIs que venham a ser adicionadas sem passar pelos testes.
+
+| Débito | Classificação nesta versão |
+|---|---|
+| DT-17 — dependência dos JSONs | Resolvido para o núcleo: carregamento e símbolos isolados no adaptador; provas transitivas e executáveis. |
+| DT-01 — coerência de criação canônica/auxiliares | Resolvido nos caminhos oficiais de criação de personagens/facções/relações/missões: serviço compartilhado integra mapa e inscrições. Escrita direta por internos pode ainda violar invariantes; não implica resolver toda mutabilidade externa. |
+| DT-18 — API de instâncias | Parcial: criação explícita de personagens/facções/relações e execução por IDs; sem ciclo de vida universal, remoção ou fábrica arbitrária de missões. |
+| DT-07 — validação externa | Parcial: fronteira runtime proporcional e registro atômico; sem schema universal, validação semântica completa de contextos ou rollback de operações. |
+
+Mantidos: mutabilidade dos internos, transações/falhas parciais, memória narrativa, deduplicação por identidade do objeto-fato, entrega assíncrona de auditoria, retenção limitada e reatividade legada separada. Limitações explícitas novas: duplicatas idênticas também são rejeitadas; referências entre lotes exigem disponibilidade anterior; não há atualização retroativa de mundos/assinaturas; a seleção de missões habilitadas precisa ser decidida na montagem. Não foram acrescentadas dependências externas.
+
+Typecheck/build não substituem validação visual. Os testes não exercitam DOM/Phaser, download real ou teclado no navegador. Permanecem necessárias a validação manual completa dos cenários 02/03 após 0.3.x e a conferência visual dos três cenários e ferramentas de diagnóstico nesta versão.

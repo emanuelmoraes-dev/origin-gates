@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { executeEvent } from '../src/game/events';
 import { selectInteraction } from '../src/game/interactions';
 import { createEntity, requireRelation, resolve, type EntityState, type GameState, type MissionState } from '../src/game/state';
-import { createWorld, events, interact, react } from '../src/game/world';
+import { createWorld, events, interact, react } from '../src/content/originGates';
 
 function reputation(world: GameState, factionId: string) {
   return requireRelation(world, 'reputation', factionId, world.player.id);

@@ -1,4 +1,5 @@
-import { addRelationDelta, createEntity, getRelationIntensity, identity, isAdjacent, pendingMission, registerInstance, requireRelation, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
+import { createCharacterInstance } from './instances';
+import { addRelationDelta, getRelationIntensity, identity, isAdjacent, pendingMission, registerInstance, requireRelation, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
 import { audited, auditSource, mutation, note, type AuditScope } from './audit';
 
 type BasicCondition = 'actorAlive' | 'targetAlive' | 'adjacent' | 'targetAttackable';
@@ -169,9 +170,7 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
       resolve(world, actor.id, 'character');
       const opponentId = factionId(ctx, 'opponent');
       factionId(ctx, 'faction');
-      const entity = createEntity(targetDefinition, ctx.offer.spawn, world, undefined, scope);
-      entity.factionId = opponentId;
-      mutation(scope, entity, 'factionId', undefined, opponentId, operation.type);
+      const entity = createCharacterInstance(world, { definitionId: targetDefinition.id, position: ctx.offer.spawn, factionId: opponentId }, scope);
       const mission: MissionState = {
         ...identity(world, definition.id, scope), kind: 'mission', status: definition.initialStatus,
         executorId: actor.id, contractorId: ctx.contractorId, targetId: entity.id,
@@ -180,7 +179,7 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
       registerInstance(world, mission, scope);
       const beforeMission = ctx.missionId;
       ctx.missionId = mission.id;
-      world.entities.push(entity);
+
       note(scope, { category: 'operation', status: 'applied', instanceIds: [mission.id, entity.id], data: { auxiliary: { mapCharacterAdded: entity.id, contextMissionBefore: beforeMission, contextMissionAfter: ctx.missionId } } });
       break;
     }

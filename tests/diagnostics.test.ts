@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AuditRecord } from '../src/game/audit';
 import { createInspector } from '../src/game/inspection';
-import { createWorld, interact } from '../src/game/world';
+import { createWorld, interact } from '../src/content/originGates';
 import { buildCausalTree, filterAuditRecords, type CausalNode, type CausalTree } from '../src/dev/audit-view';
 import { createDiagnosticExport, diagnosticFilename } from '../src/dev/diagnostics';
 

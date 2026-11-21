@@ -1,4 +1,5 @@
-import type { Fact, ReactionDefinition } from './events';
+import type { DefinitionRegistry, FactionDefinition } from './definitions';
+import type { EventDefinition, Fact, ReactionDefinition } from './events';
 import { AuditLog, audited, auditScope, auditSource, mutation, note, type AuditScope } from './audit';
 import { inspectInstance } from './inspection';
 
@@ -6,14 +7,6 @@ export interface Position { x: number; y: number }
 export interface InteractionBinding {
   readonly event: string;
   readonly context?: { readonly offer: 'target' };
-}
-export interface EntitySpawn {
-  object: string;
-  position: Position;
-  interactions?: readonly InteractionBinding[];
-  faction?: string;
-  key?: string;
-  label?: string;
 }
 export interface ObjectDefinition {
   readonly id: string;
@@ -69,7 +62,6 @@ export interface RelationState extends Identity {
   readonly kind: 'relation'; readonly sourceId: string; readonly targetId: string;
   intensity: number;
 }
-export interface RelationSpawn { definition: string; source: string; target: string; intensity: number }
 export type WorldInstance = EntityState | MissionState | FactionState | RelationState;
 export interface IdentityStore { nextId: number; instances: Record<string, WorldInstance>; readonly audit?: AuditLog }
 export function createIdentityStore(audit = new AuditLog()): IdentityStore {
@@ -94,6 +86,10 @@ export function resolve<K extends WorldInstance['kind']>(store: IdentityStore, i
 }
 export interface GameState extends IdentityStore {
   scenario: string;
+  readonly map: WorldMap;
+  readonly definitions: DefinitionRegistry;
+  factionDefinitions: Readonly<Record<string, FactionDefinition>>;
+  eventDefinitions: Readonly<Record<string, EventDefinition>>;
   player: EntityState;
   entities: EntityState[];
   readonly missions: readonly MissionState[];
@@ -106,20 +102,6 @@ export interface GameState extends IdentityStore {
   factSubscriptions: Record<string, { relationId: string; ruleId: string }[]>;
   processedFacts: WeakSet<Fact>;
 }
-
-// Source of the map can change without changing movement or rendering.
-export const worldMap: WorldMap = [
-  'LLLLLLWWLL',
-  'LLLLLLWWLL',
-  'LLLLLLWLLL',
-  'LLWWLLLLLL',
-  'LLWWLLLLLL',
-  'LLLLLLLLLL',
-  'LLLLLLWWLL',
-  'LWLLLLWWLL',
-  'LWWLLLLLLL',
-  'LLLLLLLLLL',
-].map(row => [...row].map(tile => tile === 'L' ? 'land' : 'water'));
 
 export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[], scope?: AuditScope): EntityState {
   return audited(auditSource(store, scope), { category: 'operation', definitionIds: definition ? [definition.id] : [], data: { type: 'createEntity' } }, current => {

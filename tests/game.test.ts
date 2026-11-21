@@ -1,9 +1,10 @@
+import { worldMap } from '../src/content/map';
 import { describe, expect, it } from 'vitest';
 import attackJson from '../src/data/events/attack.json';
 import playerJson from '../src/data/objects/player.json';
 import enemyJson from '../src/data/objects/enemy.json';
 import { executeEvent, type EventDefinition } from '../src/game/events';
-import { createEntity, createIdentityStore, movePlayer, worldMap } from '../src/game/state';
+import { createEntity, createIdentityStore, movePlayer } from '../src/game/state';
 
 const attack = attackJson as EventDefinition;
 function setup() {

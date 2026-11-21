@@ -1,4 +1,4 @@
-# Origin Gates — MVP 0.3.1: Exploração e exportação de diagnósticos
+# Origin Gates — 0.4.0: Engine independente e mundos programáticos
 
 Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
 
@@ -45,9 +45,12 @@ O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`,
 - `src/data/factions.json`: definições das facções sem representação no mapa.
 - `src/data/scenarios.json`: nomes do seletor, posições iniciais, facções/relações iniciais e definições de missão habilitadas. O mapa continua exclusivamente em TypeScript.
 - `src/data/events/social.json`: aceitação, entrega, reação à morte, limiar mínimo de reputação, deltas, faixas de recompensa e teto de dano. Os limites de reputação 0–100 pertencem a `relations.json`.
-- `src/game/world.ts`: cria partidas isoladas, encontra interações declaradas e avalia reações sobre o estado atual. Compartilha o interpretador de eventos com o combate.
+- `src/game/index.ts`: API pública independente de JSON e Phaser: `createEngine()`, registro aditivo, construção, criação de instâncias, comandos, inspeção e diagnósticos. Veja o [exemplo executado pelos testes](examples/programmatic-world.ts) e o [contrato 0.4.0](docs/ENGINE_CONTRACT.md#independência-e-construção-programática--040).
+- `src/content/originGates.ts`: adaptador dos JSONs e montagem dos três cenários sobre os mesmos serviços usados pela API.
+- `src/game/world.ts`: interações, comandos e reações legadas sobre definições fornecidas pelo consumidor.
 - `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).
-- `src/game/state.ts`: mapa fixo de 10 × 10 em TypeScript (`L` terra; `W` água), criação do estado e regras de movimento.
+- `src/content/map.ts`: mapa fixo de 10 × 10 em TypeScript (`L` terra; `W` água). A engine recebe o mapa do consumidor.
+- `src/game/state.ts`: identidade, estado, relações e regras de movimento; `construction.ts` e `instances.ts` integram a criação ao mundo.
 - `src/game/events.ts`: interpretador sem imports de Phaser. Avalia condições, sorteia um resultado por peso, executa operações reutilizáveis e devolve resultado estruturado. A fonte aleatória é injetável para testes. Eventos com as mesmas operações podem ser adicionados em JSON, sem uma função específica por evento.
 - `src/render/OriginScene.ts`: posições iniciais, desenho do mapa, entrada de teclado, painéis e flashes de 500 ms. A função de desenho recebe `WorldMap`; um gerador futuro pode fornecer essa mesma estrutura sem alterar o desenho.
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyOperations, executeEvent, matches } from '../src/game/events';
 import { dispatchFacts } from '../src/game/reactions';
 import { addRelationDelta, createEntity, createRelation, findRelation, getRelationIntensity, requireRelation, resolve, setRelationIntensity, type GameState, type RelationDefinition } from '../src/game/state';
-import { createWorld, events, interact } from '../src/game/world';
+import { createWorld, events, interact } from '../src/content/originGates';
 
 function friendship(world: GameState) { return world.relationInstances.find(r => r.definitionId === 'friendship')!; }
 function reputation(world: GameState, index = 0) { return requireRelation(world, 'reputation', world.factions[index].id, world.player.id); }

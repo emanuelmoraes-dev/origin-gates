@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { OriginScene } from './render/OriginScene';
 import './style.css';
-import { scenarios } from './game/world';
+import { scenarios } from './content/originGates';
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,

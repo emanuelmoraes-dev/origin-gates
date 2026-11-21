@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { adjacentEntities, createWorld, interact, react } from '../game/world';
-import { getRelationIntensity, movePlayer, requireRelation, resolve, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
+import { adjacentEntities, createWorld, interact, react } from '../content/originGates';
+import { getRelationIntensity, movePlayer, requireRelation, resolve, type EntityState, type GameState, type WorldMap } from '../game/state';
 import { note } from '../game/audit';
 
 const TILE = 48;
@@ -49,7 +49,7 @@ export class OriginScene extends Phaser.Scene {
     this.focused = undefined;
     this.circles.clear();
     this.labels.clear();
-    drawMap(this.add.graphics(), worldMap);
+    drawMap(this.add.graphics(), this.world.map);
     this.hud = this.add.graphics();
     const style = { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#f0f2ef', lineSpacing: 21 };
     this.playerLabel = this.add.text(90, 27, '', style);
@@ -74,7 +74,7 @@ export class OriginScene extends Phaser.Scene {
       const direction = directions[key];
       if (direction) {
         this.focused = this.world.entities.find(entity => entity.hp > 0 && entity.position.x === this.world.player.position.x + direction[0] && entity.position.y === this.world.player.position.y + direction[1]);
-        movePlayer(this.world.player, ...direction, worldMap, this.world.entities, this.world.audit?.scope());
+        movePlayer(this.world.player, ...direction, this.world.map, this.world.entities, this.world.audit?.scope());
         this.refresh();
       }
       if (event.code === 'Space') this.runEvent();

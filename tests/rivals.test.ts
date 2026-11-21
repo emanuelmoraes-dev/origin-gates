@@ -1,7 +1,8 @@
+import { worldMap } from '../src/content/map';
 import { describe, expect, it } from 'vitest';
 import { executeEvent } from '../src/game/events';
-import { adjacentEntities, createWorld, events, interact, react, scenarios } from '../src/game/world';
-import { movePlayer, requireRelation, resolve, worldMap, type GameState } from '../src/game/state';
+import { adjacentEntities, createWorld, events, interact, react, scenarios } from '../src/content/originGates';
+import { movePlayer, requireRelation, resolve, type GameState } from '../src/game/state';
 
 function reputation(world: GameState, factionId: string) {
   return requireRelation(world, 'reputation', factionId, world.player.id);
