@@ -1,4 +1,4 @@
-# Origin Gates — MVP 0.2.3: Reatividade social
+# Origin Gates — MVP 0.3.0: Observabilidade narrativa
 
 Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
 
@@ -23,6 +23,10 @@ npm run typecheck
 npm run build
 ```
 
+Em desenvolvimento, use **Abrir inspetor**, no canto superior direito. O painel mostra histórico em tempo real, filtros por categoria/ID, detalhes da cadeia causal e fotografias das instâncias. Limpar o histórico não altera a partida. O histórico retém até 1000 registros por padrão e informa descartes. Ao trocar de cenário, o painel se conecta ao mundo novo. O painel não é carregado no build de produção.
+
+O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`, além de `createInspector(world).list(kind?)` / `find(id)`. O [contrato técnico](docs/ENGINE_CONTRACT.md#auditoria-e-inspeção--030) documenta os contextos causais, erros parciais e a matriz de cobertura. Escritas diretas externas permanecem sem auditoria; os snapshots do inspetor não permitem alterar o mundo.
+
 ## Onde editar
 
 - `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
@@ -31,6 +35,8 @@ npm run build
 - `src/data/relations.json`: tipos de relação, categorias das pontas, unicidade, limites de intensidade e regras reativas associadas.
 - `src/data/reactions.json`: tipo de fato observado, condições de intensidade/distância e transformação por referências.
 - `src/game/reactions.ts`: despacho síncrono dos fatos usando inscrições por tipo, condições e operações da engine existente.
+- `src/game/audit.ts` e `inspection.ts`: serviço de diagnóstico, correlação causal e fotografias somente leitura.
+- `src/dev/AuditPanel.ts`: consumidor HTML/TypeScript habilitado apenas em desenvolvimento.
 - `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
 - `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
 - `src/data/factions.json`: definições das facções sem representação no mapa.

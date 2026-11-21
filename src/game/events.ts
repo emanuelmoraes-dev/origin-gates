@@ -1,4 +1,5 @@
-import { addRelationDelta, createEntity, getRelationIntensity, identity, isAdjacent, pendingMission, requireRelation, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
+import { addRelationDelta, createEntity, getRelationIntensity, identity, isAdjacent, pendingMission, registerInstance, requireRelation, resolve, type EntityState, type GameState, type MissionOffer, type MissionState, type MissionStatus } from './state';
+import { audited, auditSource, mutation, note, type AuditScope } from './audit';
 
 type BasicCondition = 'actorAlive' | 'targetAlive' | 'adjacent' | 'targetAttackable';
 export type CharacterRef = 'actor' | 'target' | 'relation.source' | 'relation.target';
@@ -88,7 +89,8 @@ function read(value: Value, actor: EntityState, target: EntityState, context?: E
   if (!mission) throw new Error('Missing mission instance');
   return resolve(ctx.world, mission.targetId, 'character').hp;
 }
-export function matches(condition: Condition, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext): boolean {
+export function matches(condition: Condition, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext, scope?: AuditScope): boolean {
+  return audited(auditSource(context?.world ?? reaction?.world ?? {}, scope), { category: 'condition', instanceIds: [actor.id, target.id, ...(reaction ? [reaction.relationId] : []), ...(context?.missionId ? [context.missionId] : [])], data: { condition } }, current => {
   if (typeof condition === 'string') {
     switch (condition) {
       case 'actorAlive': return actor.hp > 0;
@@ -100,29 +102,47 @@ export function matches(condition: Condition, actor: EntityState, target: Entity
   if (condition.type === 'compare') {
     const left = read(condition.left, actor, target, context, reaction);
     const right = read(condition.right, actor, target, context, reaction);
+    note(current, { category: 'condition', status: 'evaluated', data: { left, right, operator: condition.operator } });
     return condition.operator === 'gte' ? left >= right : left <= right;
   }
-  if (condition.type === 'sameInstance') return character(condition.left, actor, target, reaction).id === character(condition.right, actor, target, reaction).id;
-  if (condition.type === 'alive') return character(condition.entity, actor, target, reaction).hp > 0;
+  if (condition.type === 'sameInstance') {
+    const left = character(condition.left, actor, target, reaction).id;
+    const right = character(condition.right, actor, target, reaction).id;
+    note(current, { category: 'condition', status: 'evaluated', instanceIds: [left, right], data: { left, right } });
+    return left === right;
+  }
+  if (condition.type === 'alive') {
+    const entity = character(condition.entity, actor, target, reaction);
+    const hp = entity.hp;
+    note(current, { category: 'condition', status: 'evaluated', instanceIds: [entity.id], data: { hp } });
+    return hp > 0;
+  }
   const ctx = requireContext(context);
   const mission = contextMission(ctx);
   if (condition.type === 'missionStatus') return condition.statuses.includes(mission?.status ?? 'available');
   return !pendingMission(ctx.world, actor.id, ctx.contractorId);
+  }, passed => passed ? 'accepted' : 'rejected');
 }
-function apply(operation: Operation, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext) {
+function apply(operation: Operation, actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext, scope?: AuditScope) {
   if (operation.type === 'setReference') {
     const entity = character(operation.entity, actor, target, reaction);
+    const before = entity.references[operation.key];
     entity.references[operation.key] = character(operation.value, actor, target, reaction).id;
+    mutation(scope, entity, `references.${operation.key}`, before, entity.references[operation.key], operation.type);
     return;
   }
   if (operation.type === 'damage') {
+    const before = target.hp;
     target.hp = Math.max(0, target.hp - Math.max(0, read(operation.amount, actor, target, context, reaction)));
+    mutation(scope, target, 'hp', before, target.hp, operation.type);
     return;
   }
   if (operation.type === 'attributeReward') {
     const value = read(operation.value, actor, target, context, reaction);
     const reward = operation.bands.find(band => value >= band.min && value <= band.max)?.amount ?? 0;
+    const before = actor.attributes[operation.key];
     actor.attributes[operation.key] = Math.min(operation.max, (actor.attributes[operation.key] ?? 0) + reward);
+    mutation(scope, actor, `attributes.${operation.key}`, before, actor.attributes[operation.key], operation.type);
     return;
   }
   const ctx = requireContext(context);
@@ -130,13 +150,15 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
   switch (operation.type) {
     case 'relation': {
       const relation = requireRelation(world, 'reputation', factionId(ctx, operation.faction), actor.id);
-      addRelationDelta(world, relation.id, operation.amount);
+      addRelationDelta(world, relation.id, operation.amount, scope);
       break;
     }
     case 'missionStatus': {
       const mission = contextMission(ctx);
       if (!mission || operation.status === 'available') throw new Error('Invalid mission status operation');
+      const before = mission.status;
       mission.status = operation.status;
+      mutation(scope, mission, 'status', before, mission.status, operation.type);
       break;
     }
     case 'spawnTarget': {
@@ -147,27 +169,33 @@ function apply(operation: Operation, actor: EntityState, target: EntityState, co
       resolve(world, actor.id, 'character');
       const opponentId = factionId(ctx, 'opponent');
       factionId(ctx, 'faction');
-      const entity = createEntity(targetDefinition, ctx.offer.spawn, world);
+      const entity = createEntity(targetDefinition, ctx.offer.spawn, world, undefined, scope);
       entity.factionId = opponentId;
+      mutation(scope, entity, 'factionId', undefined, opponentId, operation.type);
       const mission: MissionState = {
-        ...identity(world, definition.id), kind: 'mission', status: definition.initialStatus,
+        ...identity(world, definition.id, scope), kind: 'mission', status: definition.initialStatus,
         executorId: actor.id, contractorId: ctx.contractorId, targetId: entity.id,
         opponentId, name: ctx.offer.name,
       };
-      world.instances[mission.id] = mission;
+      registerInstance(world, mission, scope);
+      const beforeMission = ctx.missionId;
       ctx.missionId = mission.id;
       world.entities.push(entity);
+      note(scope, { category: 'operation', status: 'applied', instanceIds: [mission.id, entity.id], data: { auxiliary: { mapCharacterAdded: entity.id, contextMissionBefore: beforeMission, contextMissionAfter: ctx.missionId } } });
       break;
     }
   }
 }
 
-export function applyOperations(operations: readonly Operation[], actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext) {
-  for (const operation of operations) apply(operation, actor, target, context, reaction);
+export function applyOperations(operations: readonly Operation[], actor: EntityState, target: EntityState, context?: EventContext, reaction?: ReactionContext, scope?: AuditScope) {
+  for (const operation of operations) audited(auditSource(context?.world ?? reaction?.world ?? {}, scope), { category: 'operation', instanceIds: [actor.id, target.id], data: { operation } }, current => {
+    apply(operation, actor, target, context, reaction, current ? { ...current, operation: operation.type } : undefined);
+  });
 }
 
 // No rendering dependency. Inject randomness for reproducible tests.
-export function executeEvent(event: EventDefinition, actor: EntityState, target: EntityState, random: () => number = Math.random, context?: EventContext): EventResult {
+export function executeEvent(event: EventDefinition, actor: EntityState, target: EntityState, random: () => number = Math.random, context?: EventContext, scope?: AuditScope): EventResult {
+  return audited(auditSource(context?.world ?? {}, scope), { category: 'command', instanceIds: [actor.id, target.id], definitionIds: [event.id], data: { stage: 'eventExecution' } }, current => {
   if (context) {
     resolve(context.world, context.contractorId, 'character');
     if (resolve(context.world, actor.id, 'character') !== actor) throw new Error('Actor is not the registered instance');
@@ -180,7 +208,8 @@ export function executeEvent(event: EventDefinition, actor: EntityState, target:
     }
   }
   for (const condition of [...(event.when ?? []), ...event.conditions]) {
-    if (!matches(condition, actor, target, context)) {
+    if (!matches(condition, actor, target, context, undefined, current)) {
+      note(current, { category: 'command', status: 'rejected', definitionIds: [event.id], instanceIds: [actor.id, target.id], data: { reason: typeof condition === 'string' ? condition : condition.type, message: typeof condition === 'string' ? undefined : condition.message } });
       return typeof condition === 'string' ? { executed: false, reason: condition }
         : { executed: false, reason: condition.type, message: condition.message };
     }
@@ -189,14 +218,24 @@ export function executeEvent(event: EventDefinition, actor: EntityState, target:
   if (!event.outcomes.length || !Number.isFinite(total) || event.outcomes.some(outcome => !Number.isFinite(outcome.weight) || outcome.weight <= 0)) {
     throw new Error(`Invalid outcomes for event ${event.id}`);
   }
-  let roll = random() * total;
+  const sample = random();
+  let roll = sample * total;
   const outcome = event.outcomes.find(candidate => (roll -= candidate.weight) < 0) ?? event.outcomes[event.outcomes.length - 1];
+  note(current, { category: 'outcome', status: 'selected', definitionIds: [event.id], data: { sample, total, weights: event.outcomes.map(item => ({ id: item.id, weight: item.weight })), outcomeId: outcome.id } });
   const before = target.hp;
-  applyOperations(outcome.operations, actor, target, context);
-  return {
+  applyOperations(outcome.operations, actor, target, context, undefined, current);
+  const facts = [...new Set((event.emits ?? []).map(emission => emission.type))].map(type => ({ type, actorId: actor.id, targetId: target.id }));
+  for (const fact of facts) {
+    const cause = note(current, { category: 'fact', status: 'emitted', instanceIds: [actor.id, target.id], definitionIds: [event.id], data: fact });
+    current?.log.remember(fact, cause);
+  }
+  const result: EventResult = {
     executed: true, eventId: event.id, outcomeId: outcome.id,
     damage: before - target.hp, targetHp: target.hp, killed: before > 0 && target.hp === 0,
     feedback: { ...outcome.feedback },
-    facts: [...new Set((event.emits ?? []).map(emission => emission.type))].map(type => ({ type, actorId: actor.id, targetId: target.id })),
+    facts,
   };
+  note(current, { category: 'command', status: 'result', definitionIds: [event.id], data: { outcomeId: outcome.id, damage: result.damage, targetHp: result.targetHp, killed: result.killed } });
+  return result;
+  }, result => result.executed ? 'accepted' : 'rejected');
 }

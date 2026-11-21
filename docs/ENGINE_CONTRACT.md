@@ -1,4 +1,4 @@
-# Contrato da engine — 0.2.3 e modelo unificado de relações
+# Contrato da engine — 0.3.0: observabilidade narrativa
 
 ## Definições, identidade e estado
 
@@ -176,3 +176,77 @@ O despacho é síncrono, em uma passagem finita pelas inscrições, na ordem de 
 O controle de ocorrência por identidade de objeto é local à memória: clonar ou desserializar um fato representa uma nova ocorrência para este MVP. IDs persistentes de ocorrência, histórico, transporte, remoção/reindexação de inscrições e política de prioridade/conflitos deverão ser avaliados quando necessários. Só relações fornecem regras ao novo despacho; não há resolvedor universal de contextos. As regras sociais usam as capacidades comuns, enquanto operações de missão ainda exigem o contexto especializado correspondente.
 
 **Integração pendente:** `react` continua concluindo missões pelo mecanismo da 0.2.2. Migrar esse fluxo para um futuro fato como `characterDied` deve substituir a consulta antiga, não consolidar dois sistemas permanentes. Também permanecem fora do escopo propagação de informação, percepção com obstáculos, IA, perseguição, contra-ataques e relações procedurais.
+
+## Auditoria e inspeção — 0.3.0
+
+O estado canônico continua em `world.instances`. A auditoria é um diagnóstico da execução real e o inspetor produz fotografias do estado atual; nenhum deles substitui o registro ou reconstrói partidas. Não há event sourcing, persistência ou rollback geral.
+
+### Contrato e consumo TypeScript
+
+`audit.ts` oferece `AuditLog`, `AuditRecord`, `AuditScope`, `audited`, `note` e `snapshot`, sem Phaser ou DOM. Cada mundo recebe um serviço não enumerável `world.audit`, excluído da serialização do estado canônico. `createWorld(id, { enabled?, capacity? })` habilita auditoria por padrão, com até 1000 registros retidos. `createIdentityStore` também pode receber um `AuditLog`. Para diagnosticar uma montagem que pode falhar, o chamador pode criar o log antes e passá-lo a `createWorld(id, log)`. Use um log novo por mundo/tentativa; compartilhar explicitamente o mesmo serviço compartilha o histórico e o namespace diagnóstico.
+
+```ts
+const world = createWorld('social', { capacity: 2000 });
+const cancel = world.audit!.subscribe(record => console.log(record));
+const result = interact(world, world.entities[0]);
+// Ligação explícita do legado, quando ele é consequência dessa ação:
+react(world, undefined, world.audit!.causeOf(result));
+const history = world.audit!.records();
+const stats = world.audit!.stats();
+cancel();
+world.audit!.clear(); // Não altera personagens, relações, missões ou IDs.
+```
+
+`records()` retorna o histórico cronológico retido; `subscribe()` recebe somente registros novos em microtasks, após a pilha síncrona narrativa. `clear()` esvazia a retenção e zera o contador de descartes dessa janela, mas não reinicia sequência, IDs de ocorrências ou traces. Cada inscrição tem identidade própria e seu cancelamento impede entregas ainda pendentes. Distribuição e retenção são independentes: registros descartados/limpos podem já estar agendados para assinantes. Não há replay automático de histórico.
+
+O buffer circular limita o histórico; `stats()` informa capacidade, retidos, descartados, sequência, habilitação e erros de consumidores. As notificações já agendadas são transitórias e não fazem parte desse limite. Erros síncronos, rejeições de promises/thenables e falhas de conversão da mensagem de um consumidor não interrompem outros consumidores nem são propagados como erros narrativos. São contabilizados em `observerErrors`/`lastObserverError`, sem emitir novos registros recursivamente. Consumidores recebem apenas dados destacados/congelados; isso não é um sandbox contra closures que já possuam acesso externo ao mundo mutável.
+
+### Identidade e causalidade dos registros
+
+Um `AuditRecord` contém `id`, `sequence`, `worldId`, `traceId`, `parentId?`, `category`, `phase`, `status`, `instanceIds`, `definitionIds` e `data`. `sequence` é a ordem lógica monotônica do serviço; não depende de relógio/timestamp. IDs diagnósticos têm namespace `world_N:audit:S`, traces usam `world_N:trace:T`, e nenhum deles chama `identity()` ou consome RNG. Não são IDs persistentes de partidas/fatos.
+
+`traceId` agrupa a cadeia; `parentId` aponta para a ocorrência concreta causadora. Registros `start` abrem spans; pontos e encerramentos apontam ao início correspondente. O contexto `AuditScope` é passado explicitamente pelos módulos. Não há contexto causal global implícito. Contexto de outro mundo é rejeitado antes de mutações, com diagnóstico separado no log local.
+
+O evento continua devolvendo os mesmos objetos `Fact` com tipo/participantes. Um `WeakMap` do log associa o objeto do fato à ocorrência `fact/emitted`; o despacho usa essa causa para ligar regra, operação e mutação. Para fatos fornecidos diretamente sem causa conhecida, abre-se uma cadeia própria. Resultados de comandos/interações também podem ser consultados por `causeOf(result)`. `react(world)` isolado abre outra cadeia; a cena passa explicitamente a causa do resultado anterior, sem migrar missões para fatos.
+
+Na integração do cenário social, uma esquiva registra seleção de `attack`, condições, amostra RNG/outcome `dodge`, emissão de `attackAttempted`, despacho, avaliação das quatro relações inscritas, aplicação da reação de A e mutação de `references.hostileTo`. Todas pertencem ao mesmo trace. Não há avaliação inventada para C: ele não fornece uma relação inscrita. A relação vítima → E é registrada com sua direção real e rejeitada na condição correspondente.
+
+### Fidelidade, fotografias e falhas
+
+Condições são registradas onde realmente são avaliadas, respeitando short-circuit. Comparações incluem os operandos efetivamente calculados; nenhuma condição é reavaliada apenas para montar logs. O `when` da seleção e sua revalidação posterior são avaliações reais distintas, com ancestrais distintos. O sorteio registra a única amostra obtida, pesos, total e outcome, inclusive para eventos de um só resultado. Não há RNG extra.
+
+Mutações incluem instância/definição, caminho da propriedade, `before`, `after` e operação responsável. Atribuições de valor igual são marcadas `unchanged`; criações registram propriedades iniciais e referências. Configurações que ocorrem depois do registro inicial são mutações subsequentes, não uma criação retroativamente reescrita.
+
+Registros, arrays e dados são cópias profundamente congeladas e serializáveis. `undefined` é representado por `{ "$undefined": true }`; números não finitos por `{ "$number": "NaN" }` ou equivalente; ciclos são marcados `[Circular]`. Não são armazenados objetos vivos nem fotografias completas do mundo a cada registro.
+
+Recusas legítimas têm status `rejected`/`unavailable`; falhas técnicas geram `failure` e a exceção original continua propagando. Uma mesma exceção pode aparecer em spans aninhados, representando sua propagação, não novas execuções. `stateReverted: false` explicita que não foi executado rollback. Uma operação anterior pode permanecer aplicada; o fato marcado como consumido antes de uma falha em reação continua consumido, preservando a semântica anterior. O resultado do comando continua descrevendo seu resultado direto; as consequências sociais aparecem nos registros posteriores.
+
+### API de inspeção e painel
+
+`createInspector(store).list(kind?)` e `.find(instanceId)` retornam `InstanceSnapshot` destacados, congelados e serializáveis: `id`, `definitionId`, `kind`, `properties`. As propriedades contêm estado e referências, incluindo intensidade e status; o objeto vivo da definição é omitido. Uma fotografia antiga não muda quando a partida avança. Consultar o inspetor não executa comandos nem produz auditoria.
+
+Durante `npm run dev`, o botão **Abrir inspetor** monta o consumidor HTML/TypeScript em `src/dev/AuditPanel.ts`. O painel permite filtrar categorias de registro, buscar IDs, selecionar ocorrências e ver JSON/trace/pai, listar instâncias por tipo e inspecionar relações conectadas. O rodapé mostra descartes e erros de consumidores. Pais ausentes por retenção/limpeza são indicados. **Limpar histórico** só limpa diagnósticos; **Atualizar estado** consulta novamente as instâncias, inclusive após escritas externas não auditadas.
+
+O painel atualiza por assinatura, agrupa renderizações em microtask e cancela a inscrição ao reiniciar/trocar cenário. Eventos de teclado dentro de seus controles não propagam ao jogo. A importação dinâmica está condicionada a `import.meta.env.DEV`; o build de produção não monta nem importa o painel. Auditoria de núcleo pode continuar habilitada sem interface ou ser desligada com `{ enabled: false }`.
+
+### Cobertura verificável e caminhos não interceptados
+
+| Caminho encontrado | Instrumentação |
+|---|---|
+| `identity` / `nextId++` | Alocação diagnóstica com contador anterior/posterior; não equivale a criação confirmada. |
+| `createEntity`, facções em `createWorld`, `createRelation`, missão em `spawnTarget` | Registrador compartilhado `registerInstance`: uma criação por instância. Fábricas também registram falhas. |
+| `createWorld`: `label`, `factionId`, `offer`; `spawnTarget`: `factionId` | Mutações explícitas após criação. |
+| Operações: `hp`, `attributes[key]`, `references[key]`, `mission.status` | Operação, mutação anterior/posterior e falha propagada. |
+| `setRelationIntensity` / `addRelationDelta` | A mutação é registrada apenas no setter; delta e operação são seus ancestrais. |
+| `movePlayer` | A cena fornece scope; movimento válido registra posição, bloqueado registra recusa sem mutação. |
+| `world.entities`, `ctx.missionId` | Montagem/entrada no mapa e atualização de contexto identificadas como auxiliares, sem duplicar HP. |
+| `factSubscriptions`, `processedFacts` | Registros de inscrição/consumo e decisão de ignorar fato já consumido. `visited` permanece temporário. |
+| `react` legado | Decisões, eventos e alterações instrumentados; ligação causal somente por scope explícito. |
+| Círculos, textos, flashes, seleção e temporizadores da cena | Estado visual, fora da auditoria canônica. |
+| Escritas externas diretas em instâncias, subobjetos, registro, listas, definições e índices | **Não interceptadas.** Inspetor mostra o estado atual, sem fabricar histórico. |
+
+Exports de baixo nível `executeEvent`, `applyOperations`, `matches` e `movePlayer` aceitam scope opcional; os três primeiros também usam o contexto de mundo disponível. Chamadas puras sem contexto/scope continuam funcionando, mas **não têm canal de auditoria**. `resolve`, `findRelation`, `requireRelation` e `getRelationIntensity` chamados isoladamente também não auditam suas falhas; dentro de fluxos instrumentados elas são diagnosticadas nos spans correspondentes. Isso impede declarar cobertura universal.
+
+Os testes do serviço e da engine verificam retenção, isolamento, snapshots, causalidade, criação, RNG, recusas, erros parciais, helpers e legado, além de comparar auditoria ligada/desligada nos três cenários. O painel tem verificação de tipos/build; a infraestrutura atual não inclui um teste automatizado de DOM/Phaser ou uma prova visual de layout/interações no navegador.
+
+Débitos reduzidos: ausência de histórico, opacidade das mutações oficiais e falta de inspeção destacada. Permanecem: escrita externa mutável, falhas parciais, fatos identificados por objeto, reindexação e conclusão de missões separada. Limitações novas do diagnóstico: retenção pode remover ancestrais e o painel depende de atualização manual para alterações não auditadas. Não há registro separado de débitos no repositório; esses itens devem ser transferidos ao registro externo do projeto, quando aplicável.

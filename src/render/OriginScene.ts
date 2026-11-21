@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { adjacentEntities, createWorld, interact, react } from '../game/world';
 import { getRelationIntensity, movePlayer, requireRelation, resolve, worldMap, type EntityState, type GameState, type WorldMap } from '../game/state';
+import { note } from '../game/audit';
 
 const TILE = 48;
 const MAP_X = 24;
@@ -38,6 +39,13 @@ export class OriginScene extends Phaser.Scene {
 
   create() {
     this.world = createWorld(this.scenarioId);
+    if (import.meta.env.DEV) {
+      let active = true;
+      let dispose: (() => void) | undefined;
+      const world = this.world;
+      void import('../dev/AuditPanel').then(({ mountAuditPanel }) => { if (active) dispose = mountAuditPanel(world); }).catch(error => console.error('Audit panel failed to load', error));
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => { active = false; dispose?.(); });
+    }
     this.focused = undefined;
     this.circles.clear();
     this.labels.clear();
@@ -66,7 +74,7 @@ export class OriginScene extends Phaser.Scene {
       const direction = directions[key];
       if (direction) {
         this.focused = this.world.entities.find(entity => entity.hp > 0 && entity.position.x === this.world.player.position.x + direction[0] && entity.position.y === this.world.player.position.y + direction[1]);
-        movePlayer(this.world.player, ...direction, worldMap, this.world.entities);
+        movePlayer(this.world.player, ...direction, worldMap, this.world.entities, this.world.audit?.scope());
         this.refresh();
       }
       if (event.code === 'Space') this.runEvent();
@@ -82,6 +90,7 @@ export class OriginScene extends Phaser.Scene {
   private runEvent() {
     const targets = adjacentEntities(this.world);
     if (!targets.length) {
+      note(this.world.audit?.scope(), { category: 'interaction', status: 'rejected', instanceIds: [this.world.player.id], data: { reason: 'noAdjacentCharacter' } });
       this.message.setText('Aproxime-se de um personagem para interagir. R reinicia.');
       return;
     }
@@ -103,7 +112,7 @@ export class OriginScene extends Phaser.Scene {
     }
     this.message.setText(result.killed ? 'Guardião derrotado! R para uma nova partida.' : result.feedback.message + (result.damage ? ` −${result.damage} HP` : ''));
     if (result.killed && this.scenarioId === 'social') this.message.setText('Vítima derrotada. As hostilidades permanecem. R reinicia.');
-    for (const reaction of react(this.world)) if (reaction.executed) this.message.setText(reaction.feedback.message);
+    for (const reaction of react(this.world, undefined, this.world.audit?.causeOf(result))) if (reaction.executed) this.message.setText(reaction.feedback.message);
     this.refresh();
   }
 

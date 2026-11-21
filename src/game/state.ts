@@ -1,4 +1,6 @@
 import type { Fact, ReactionDefinition } from './events';
+import { AuditLog, audited, auditScope, auditSource, mutation, note, type AuditScope } from './audit';
+import { inspectInstance } from './inspection';
 
 export interface Position { x: number; y: number }
 export interface InteractionBinding {
@@ -69,10 +71,21 @@ export interface RelationState extends Identity {
 }
 export interface RelationSpawn { definition: string; source: string; target: string; intensity: number }
 export type WorldInstance = EntityState | MissionState | FactionState | RelationState;
-export interface IdentityStore { nextId: number; instances: Record<string, WorldInstance> }
-export function createIdentityStore(): IdentityStore { return { nextId: 1, instances: {} }; }
-export function identity(store: IdentityStore, definitionId: string): Identity {
-  return { id: `entity_${String(store.nextId++).padStart(6, '0')}`, definitionId };
+export interface IdentityStore { nextId: number; instances: Record<string, WorldInstance>; readonly audit?: AuditLog }
+export function createIdentityStore(audit = new AuditLog()): IdentityStore {
+  return Object.defineProperty({ nextId: 1, instances: {} }, 'audit', { value: audit, enumerable: false });
+}
+export function registerInstance(store: IdentityStore, instance: WorldInstance, scope?: AuditScope): void {
+  const current = auditScope(auditSource(store, scope));
+  store.instances[instance.id] = instance;
+  note(current, { category: 'instance', status: 'created', instanceIds: [instance.id], definitionIds: [instance.definitionId], data: inspectInstance(instance) });
+}
+export function identity(store: IdentityStore, definitionId: string, scope?: AuditScope): Identity {
+  const source = auditSource(store, scope);
+  const before = store.nextId;
+  const result = { id: `entity_${String(store.nextId++).padStart(6, '0')}`, definitionId };
+  note(auditScope(source), { category: 'instance', status: 'allocated', instanceIds: [result.id], definitionIds: [definitionId], data: { nextIdBefore: before, nextIdAfter: store.nextId } });
+  return result;
 }
 export function resolve<K extends WorldInstance['kind']>(store: IdentityStore, id: string, kind: K): Extract<WorldInstance, { kind: K }> {
   const entity = store.instances[id];
@@ -108,14 +121,17 @@ export const worldMap: WorldMap = [
   'LLLLLLLLLL',
 ].map(row => [...row].map(tile => tile === 'L' ? 'land' : 'water'));
 
-export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[]): EntityState {
+export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[], scope?: AuditScope): EntityState {
+  return audited(auditSource(store, scope), { category: 'operation', definitionIds: definition ? [definition.id] : [], data: { type: 'createEntity' } }, current => {
   if (!definition) throw new Error('Unknown character definition');
-  const entity: EntityState = { ...identity(store, definition.id), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions, references: {} };
-  store.instances[entity.id] = entity;
+  const entity: EntityState = { ...identity(store, definition.id, current), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions, references: {} };
+  registerInstance(store, entity, current);
   return entity;
+  });
 }
 
-export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number): RelationState {
+export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number, scope?: AuditScope): RelationState {
+  return audited(auditSource(world, scope), { category: 'operation', instanceIds: [sourceId, targetId], definitionIds: [definitionId], data: { type: 'createRelation', intensity } }, current => {
   const definition = validateRelationEndpoints(world, definitionId, sourceId, targetId);
   const value = normalizeIntensity(definition, intensity);
   if (definition.unique && world.relationInstances.some(r => r.definitionId === definitionId && r.sourceId === sourceId && r.targetId === targetId)) {
@@ -126,10 +142,12 @@ export function createRelation(world: GameState, definitionId: string, sourceId:
     if (!rule) throw new Error(`Unknown reaction rule: ${ruleId}`);
     return { ruleId, on: rule.on };
   });
-  const relation: RelationState = { ...identity(world, definition.id), kind: 'relation', sourceId, targetId, intensity: value };
-  world.instances[relation.id] = relation;
+  const relation: RelationState = { ...identity(world, definition.id, current), kind: 'relation', sourceId, targetId, intensity: value };
+  registerInstance(world, relation, current);
   for (const rule of rules) (world.factSubscriptions[rule.on] ??= []).push({ relationId: relation.id, ruleId: rule.ruleId });
+  note(current, { category: 'dispatch', status: 'subscribed', instanceIds: [relation.id], data: { rules } });
   return relation;
+  });
 }
 
 function validateRelationEndpoints(world: GameState, definitionId: string, sourceId: string, targetId: string): RelationDefinition {
@@ -170,15 +188,21 @@ export function getRelationIntensity(world: GameState, relationId: string): numb
   return relation.intensity;
 }
 
-export function setRelationIntensity(world: GameState, relationId: string, value: number): void {
+export function setRelationIntensity(world: GameState, relationId: string, value: number, scope?: AuditScope): void {
+  return audited(auditSource(world, scope), { category: 'operation', instanceIds: [relationId], data: { type: 'setRelationIntensity', value } }, current => {
   const relation = resolve(world, relationId, 'relation');
   const definition = validateRelationEndpoints(world, relation.definitionId, relation.sourceId, relation.targetId);
+  const before = relation.intensity;
   relation.intensity = normalizeIntensity(definition, value);
+  mutation(current, relation, 'intensity', before, relation.intensity, 'setRelationIntensity');
+  });
 }
 
-export function addRelationDelta(world: GameState, relationId: string, delta: number): void {
+export function addRelationDelta(world: GameState, relationId: string, delta: number, scope?: AuditScope): void {
+  return audited(auditSource(world, scope), { category: 'operation', instanceIds: [relationId], data: { type: 'addRelationDelta', delta } }, current => {
   if (!Number.isFinite(delta)) throw new Error('Non-finite relation delta');
-  setRelationIntensity(world, relationId, getRelationIntensity(world, relationId) + delta);
+  setRelationIntensity(world, relationId, getRelationIntensity(world, relationId) + delta, current);
+  });
 }
 
 export function pendingMission(world: GameState, executorId: string, contractorId: string): MissionState | undefined {
@@ -189,12 +213,16 @@ export function isAdjacent(a: EntityState, b: EntityState): boolean {
   return Math.abs(a.position.x - b.position.x) + Math.abs(a.position.y - b.position.y) === 1;
 }
 
-export function movePlayer(player: EntityState, dx: number, dy: number, map: WorldMap, occupants: readonly EntityState[]): boolean {
+export function movePlayer(player: EntityState, dx: number, dy: number, map: WorldMap, occupants: readonly EntityState[], scope?: AuditScope): boolean {
+  return audited(scope, { category: 'movement', instanceIds: [player.id], data: { dx, dy } }, current => {
   if (player.hp <= 0 || Math.abs(dx) + Math.abs(dy) !== 1) return false;
   const x = player.position.x + dx;
   const y = player.position.y + dy;
   if (map[y]?.[x] !== 'land') return false;
   if (occupants.some(entity => entity.hp > 0 && entity.position.x === x && entity.position.y === y)) return false;
+  const before = player.position;
   player.position = { x, y };
+  mutation(current, player, 'position', before, player.position, 'movePlayer');
   return true;
+  }, moved => moved ? 'accepted' : 'rejected');
 }

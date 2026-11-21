@@ -1,0 +1,37 @@
+.og-audit-root { color: #e5eae7; font: 12px/1.45 system-ui, sans-serif; }
+.og-audit-root button, .og-audit-root select, .og-audit-root input {
+  font: inherit; color: inherit; background: #293439; border: 1px solid #697176;
+  border-radius: 4px; padding: 7px; margin: 0;
+}
+.og-audit-root button { cursor: pointer; }
+.og-audit-root button:disabled { cursor: default; opacity: .5; }
+.og-audit-root button:focus-visible, .og-audit-root select:focus-visible, .og-audit-root input:focus-visible {
+  outline: 2px solid #77cf75; outline-offset: 2px;
+}
+.og-audit-root .og-audit-toggle { position: fixed; top: 12px; right: 12px; z-index: 1001; box-shadow: 0 3px 12px #0006; }
+.og-audit-panel {
+  position: fixed; z-index: 1000; top: 54px; right: 12px; bottom: 12px;
+  width: min(960px, calc(100vw - 24px)); padding: 14px; background: #182329;
+  border: 1px solid #697176; border-radius: 6px; box-shadow: 0 12px 40px #0008;
+  display: flex; flex-direction: column; gap: 10px; overflow: auto;
+}
+.og-audit-panel[hidden] { display: none; }
+.og-audit-root h2 { margin: 0; font-size: 17px; }
+.og-audit-root h3 { margin: 0; font-size: 13px; }
+.og-audit-toolbar { display: flex; gap: 7px; flex-wrap: wrap; }
+.og-audit-toolbar input { min-width: 110px; flex: 1; }
+.og-audit-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; flex: 1; }
+.og-audit-column { display: flex; flex-direction: column; gap: 7px; min-width: 0; min-height: 0; }
+.og-audit-list { height: 210px; min-height: 100px; flex-shrink: 0; overflow: auto; border: 1px solid #454c50; padding: 4px; }
+.og-audit-list p { margin: 7px; color: #aab5b5; }
+.og-audit-root .og-audit-row { display: block; width: 100%; margin-bottom: 4px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+.og-audit-row[aria-pressed="true"] { border-color: #77cf75; background: #31483b; }
+.og-audit-details { margin: 0; padding: 9px; background: #10191e; font: 11px/1.45 ui-monospace, monospace; overflow: auto; min-height: 110px; flex: 1; white-space: pre-wrap; overflow-wrap: anywhere; }
+.og-audit-causal { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #b9d4c0; font-size: 11px; }
+.og-audit-stats, .og-audit-note { margin: 0; font-size: 11px; color: #b0bcbf; }
+@media (max-width: 640px) {
+  .og-audit-columns { grid-template-columns: 1fr; min-height: auto; }
+  .og-audit-column { min-height: 360px; }
+  .og-audit-panel { overflow: auto; }
+  .og-audit-list { height: 160px; }
+}
