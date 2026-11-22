@@ -1,73 +1,81 @@
-# Origin Gates — 0.4.1: Composições narrativas e referências contextuais
+# Origin Gates — 0.4.2
 
-Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
+Monorepositório npm com dois workspaces. Requer Node.js 22.12+ e npm compatível com workspaces.
+
+```text
+packages/
+  narrative-engine/    @origin-gates/narrative-engine
+    src/               engine, espaço 2D, composições e consultas
+    tests/             unidades internas e provas da API pública
+    examples/          consumidores do pacote
+    docs/ENGINE_CONTRACT.md
+  origin-gates/        @origin-gates/game
+    src/data/          JSONs do jogo e composições de produção
+    src/content/       carregamento pela API pública
+    src/render/        Phaser
+    src/dev/           painel e consultas diagnósticas de apresentação
+    tests/             regressão dos cenários reais, equivalência e diagnósticos
+tests/                 proteção da fronteira entre pacotes
+scripts/               desenvolvimento e prova de consumo do tarball
+```
+
+A dependência é `Origin Gates → @origin-gates/narrative-engine`. O pacote de engine exporta somente `.`, com JavaScript ESM e declarações TypeScript de `dist`. O jogo não importa seus internos, nem por tipos ou aliases. A engine não depende de Phaser, DOM ou conteúdo do jogo.
+
+## Executar na raiz
 
 ```sh
 npm install
 npm run dev
 ```
 
-Abra o endereço indicado pelo Vite. Use WASD ou setas para mover um tile por pressionamento; Espaço para atacar; R para reiniciar. Clique na área do jogo caso o teclado esteja focado em outra janela. Adjacência significa um tile na horizontal ou vertical, sem diagonais. O jogador começa três tiles à esquerda do NPC.
+O comando compila a engine, inicia seu `tsc --watch` e o Vite do jogo. Alterações na engine recompilam seus artefatos públicos; o Vite observa o pacote compilado sem alias para `src`. Use o endereço exibido pelo Vite, normalmente http://localhost:5173/; se a porta estiver ocupada, será escolhida outra. Ctrl+C encerra os dois processos.
 
-No seletor acima do mapa, escolha **01 — Campo de treinamento** (combate original) ou **02 — Lealdades rivais**. Trocar de cenário ou pressionar R cria uma partida nova, sem persistência. No cenário 02, o jogador começa em (3, 6), o oficial azul em (4, 3) e o representante roxo em (6, 3); coordenadas em coluna/linha, começando em 1.
+WASD/setas movem e selecionam um personagem adjacente; Espaço interage; R reinicia. O seletor mantém os três cenários. [Controles e regras do jogo](packages/origin-gates/README.md).
 
-Chegue ao lado de um representante e pressione Espaço para aceitar sua missão. O alvo só aparece após a aceitação, e o painel informa suas coordenadas. Elimine-o, volte ao mesmo representante e pressione Espaço para entregar. Pressione novamente para repetir com novas instâncias da missão e do alvo. Há somente uma missão pendente por representante, incluindo as prontas para entrega; governo e resistência podem ter missões simultâneas. Se houver dois personagens adjacentes, pressione uma direção em direção ao personagem desejado para selecioná-lo antes de usar Espaço.
-
-As relações começam em 50/50. Cada entrega soma 20 à facção contratante e subtrai 15 da adversária, limitadas a 0–100. Uma relação abaixo de 20 bloqueia novas missões dessa facção até reiniciar. O bônus de dano considera a relação **após** essa alteração: 0–29 dá +1, 30–59 dá +3, 60–79 dá +5, 80–100 dá +10. O dano começa em 10 e acumula até 50. Os representantes não podem ser atacados.
-
-No **03 — Reatividade social**, o jogador começa ao lado da vítima. Pressione Espaço: tanto acerto quanto esquiva geram uma tentativa admitida. A fica vermelho e hostil ao agressor; B (amizade fraca), C (sem relação), D (distante) e E (relação na direção inversa) permanecem neutros. O mapa rotula os personagens, e o painel mostra relações direcionais, intensidades e hostilidade. O limiar é 70 e o alcance Manhattan é 3, ambos inclusivos e configuráveis em `src/data/reactions.json`. Não há perseguição ou contra-ataque. R ou a troca de cenário cria uma partida isolada.
+## Verificações
 
 ```sh
 npm test
 npm run typecheck
 npm run build
+npm run test:consumer
 ```
 
-Em desenvolvimento, use **Abrir inspetor**, no canto superior direito. Alterne **Cronológico** / **Árvore causal**, expanda/recolha os registros e selecione seus detalhes. A busca por ID de instância inclui a cadeia relacionada por padrão; o modo de participação direta e o filtro exato de `traceId` permitem restringir a investigação. Na árvore, ancestrais são preservados como contexto. **Ver cadeia selecionada** mostra a cadeia inteira de uma ocorrência.
+O build respeita a ordem engine → jogo. `test:consumer` cria um tarball local com `npm pack`, instala-o offline em um diretório temporário fora do workspace, compila um consumidor TypeScript contra suas declarações e executa o JavaScript em Node. Não publica nada no npm e remove somente seu diretório temporário.
 
-**Exportar diagnóstico JSON** baixa todos os registros retidos (sem filtros), estatísticas/descartes e fotografias das instâncias, no schema 1. O nome identifica cenário, mundo e instante. Limpar o histórico não altera a partida. O histórico retém até 1000 registros por padrão, informa descartes e identifica pais ausentes. Ao trocar de cenário, o painel se conecta ao mundo novo. Em produção, a cena não carrega o painel e desativa a coleta; consumidores TypeScript ainda podem ativá-la explicitamente.
+Comandos independentes por workspace:
 
-O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`, além de `createInspector(world).list(kind?)` / `find(id)`. O [contrato técnico](docs/ENGINE_CONTRACT.md#auditoria-e-inspeção--030) documenta os contextos causais, erros parciais e a matriz de cobertura. Escritas diretas externas permanecem sem auditoria; os snapshots do inspetor não permitem alterar o mundo.
+```sh
+npm run build --workspace=@origin-gates/narrative-engine
+npm test --workspace=@origin-gates/narrative-engine
+npm run build --workspace=@origin-gates/game
+npm test --workspace=@origin-gates/game
+```
 
-## Onde editar
+Os comandos do jogo constroem primeiro a dependência pública. Para conferir os tipos isoladamente, execute `npm run build:engine` e então `npm run typecheck --workspace=<nome>`.
 
-- `src/data/objects/player.json` e `enemy.json`: nomes, vida máxima e cores das definições originais.
-- `src/data/events/attack.json`: condições, pesos dos resultados, operações de dano e feedback visual. Pesos iguais dão 50% para cada resultado. Cores usam hexadecimal e duração usa milissegundos.
-- `src/data/objects/reactivity.json`: vítima e definição compartilhada pelos cinco observadores.
-- `src/data/relations.json`: tipos de relação, categorias das pontas, unicidade, limites de intensidade e regras reativas associadas.
-- `src/data/reactions.json`: tipo de fato observado, condições de intensidade/distância e transformação por referências.
-- `src/game/reactions.ts`: despacho síncrono dos fatos usando inscrições por tipo, condições e operações da engine existente.
-- `src/game/audit.ts` e `inspection.ts`: serviço de diagnóstico, correlação causal e fotografias somente leitura.
-- `src/dev/AuditPanel.ts`: consumidor HTML/TypeScript habilitado apenas em desenvolvimento.
-- `src/dev/audit-view.ts` e `diagnostics.ts`: consultas contextuais, árvore causal e exportação destacada, sem DOM/Phaser.
-- `src/data/objects/social.json`: definições dos representantes e alvos, com as ofertas e posições fixas dos alvos.
-- `src/data/missions.json`: definição reutilizável `eliminateTarget`, estado inicial e reações comuns.
-- `src/data/factions.json`: definições das facções sem representação no mapa.
-- `src/data/scenarios.json`: nomes do seletor, posições iniciais, facções/relações iniciais e definições de missão habilitadas. O mapa continua exclusivamente em TypeScript.
-- `src/data/events/social.json`: aceitação, entrega, reação à morte, limiar mínimo de reputação, deltas, faixas de recompensa e teto de dano. Os limites de reputação 0–100 pertencem a `relations.json`.
-- `src/game/index.ts`: API pública independente de JSON e Phaser: `createEngine()`, registro aditivo, construção, criação de instâncias, comandos, inspeção e diagnósticos. Veja o [exemplo executado pelos testes](examples/programmatic-world.ts) e o [contrato 0.4.0](docs/ENGINE_CONTRACT.md#independência-e-construção-programática--040).
-- `src/game/composition-types.ts` e `compositions.ts`: definições reutilizáveis, preparação validada e instanciação coletiva sobre as fábricas existentes, com coordenadas locais, bindings e papéis.
-- `src/game/references.ts`: gramática e resolução centralizadas de IDs, símbolos e papéis. Veja o [exemplo público executável](examples/compositions.ts) e o [contrato 0.4.1](docs/ENGINE_CONTRACT.md#composições-e-referências-contextuais--041).
-- `src/content/originGates.ts`: adaptador dos JSONs e montagem dos três cenários sobre os mesmos serviços usados pela API.
-- `src/game/world.ts`: interações, comandos e reações legadas sobre definições fornecidas pelo consumidor.
-- `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).
-- `src/content/map.ts`: mapa fixo de 10 × 10 em TypeScript (`L` terra; `W` água). A engine recebe o mapa do consumidor.
-- `src/game/state.ts`: identidade, estado, relações e regras de movimento; `construction.ts` e `instances.ts` integram a criação ao mundo.
-- `src/game/events.ts`: interpretador sem imports de Phaser. Avalia condições, sorteia um resultado por peso, executa operações reutilizáveis e devolve resultado estruturado. A fonte aleatória é injetável para testes. Eventos com as mesmas operações podem ser adicionados em JSON, sem uma função específica por evento.
-- `src/render/OriginScene.ts`: posições iniciais, desenho do mapa, entrada de teclado, painéis e flashes de 500 ms. A função de desenho recebe `WorldMap`; um gerador futuro pode fornecer essa mesma estrutura sem alterar o desenho.
+## Conteúdo, API e diagnósticos
 
-O estado de cada entidade contém a vida atual e a posição, separados da definição carregada do JSON. A interface lê esse estado diretamente. Nenhum JSON é alterado durante a partida. NPC morto desaparece, deixa de bloquear movimento e não pode receber ataques. Ataques rápidos substituem o temporizador visual anterior, mantendo o último feedback por 500 ms.
+- [Contrato técnico da engine](packages/narrative-engine/docs/ENGINE_CONTRACT.md#pacotes-consultas-e-consumo-público--042).
+- [Exemplo completo de consumidor](scripts/consumer/index.ts), compilado e executado pela prova do tarball.
+- [Exemplo de composições](packages/narrative-engine/examples/compositions.ts).
+- [Cenários](packages/origin-gates/src/data/scenarios.json): jogador, missões habilitadas e instanciações das composições.
+- [Composições de produção](packages/origin-gates/src/data/compositions.json): personagens, facções, relações e ofertas locais.
+- [Adaptador](packages/origin-gates/src/content/originGates.ts): organiza os JSONs, registra definições, cria o mundo e chama `instantiateComposition`.
+- [Renderer](packages/origin-gates/src/render/OriginScene.ts): usa consultas narrativas destacadas e IDs para os elementos visuais.
+- [Painel](packages/origin-gates/src/dev/AuditPanel.ts): usa somente auditoria, inspeção e exportação públicas. Continua exclusivo de desenvolvimento; a coleta permanece desligada em produção.
 
-Os testes executam a lógica diretamente, sem carregar Phaser ou navegador, cobrindo acerto, esquiva, limiar de probabilidade, dano, morte, condições de ataque, preservação dos JSONs e colisões.
+Consultas narrativas não dependem da auditoria. O painel preserva filtros, árvore causal, retenção, exportação, limpeza e troca de mundo. A sobreposição visual conhecida de legendas na região JSON permanece fora do escopo.
 
-## Regras declarativas
+## Cobertura e limites
 
-A engine preserva as condições originais (`actorAlive`, `targetAlive`, `adjacent`) e acrescenta `targetAttackable`, `compare` (comparações `gte`/`lte` parametrizadas), `missionStatus` e `noActiveMission`. As referências numéricas consultam um atributo do jogador, a relação com `faction`/`opponent` da missão ou a vida da instância do alvo.
+A reorganização preserva os 302 testes anteriores. As unidades que antes usavam o adaptador interno agora usam as fixtures literais TypeScript já existentes, sem carregar JSONs de produção; elas continuam dentro do pacote da engine e mantêm suas asserções. Os testes de produção e de apresentação ficam no jogo e usam exclusivamente a API pública.
 
-As operações são `damage`, `relation` (adaptador de delta para a reputação da facção sobre o ator), `attributeReward` (consulta e faixas numéricas), `missionStatus` e `spawnTarget`. Reputação e amizade compartilham instâncias em `world.instances`, consultadas pela visão `world.relationInstances`; os limites pertencem ao tipo da relação. No cenário, `relations` usa símbolos locais, por exemplo governo → jogador para reputação e A → vítima para amizade. O array de operações é executado em ordem: relações são alteradas antes de consultar a faixa de recompensa. O combate consulta `attributes.damage` em todos os cenários; no treinamento ele permanece em 10.
+| Local | Testes atuais |
+|---|---:|
+| Engine: 282 anteriores + 10 de consultas | 292 |
+| Jogo: 20 anteriores adaptados + 5 de produção | 25 |
+| Fronteira arquitetural na raiz | 10 |
+| Total | 327 |
 
-`when` seleciona qual evento se aplica ao estado atual; `conditions` valida sua execução e pode retornar uma mensagem de recusa. A reação de alvo derrotado consulta a instância da missão e o ID de seu alvo, sem consultar o identificador de um ataque anterior. `available` indica uma oferta sem missão pendente. As instâncias percorrem `active → ready → completed`; uma nova aceitação cria outra instância. A entrega exige `ready`, impedindo recompensa duplicada.
-
-Os testes originais foram mantidos. Os testes de missões cobrem as duas facções, limites, faixas, repetição, exclusividade, reset e alterações dos próprios dados de evento sem mudar as regras TypeScript.
-
-Os testes de reatividade cobrem fatos admitidos/recusados, direcionalidade, identidades concretas, limites inclusivos, alterações de parâmetros em dados, agressor diferente do jogador, deduplicação e isolamento das partidas. O contrato técnico também registra a futura migração das reações de missão para fatos.
+A equivalência compara identidades correspondentes, vínculos e propriedades, sem exigir IDs ou históricos de auditoria idênticos após a introdução das composições. Não há novas mecânicas, migração do polling de missões, persistência ou rollback universal. A validação visual final dos cenários e do painel continua responsabilidade de uma execução no navegador; testes de lógica/build não a substituem.

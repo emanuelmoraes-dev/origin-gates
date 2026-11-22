@@ -1,0 +1,73 @@
+[
+  {
+    "id": "training",
+    "name": "01 — Campo de treinamento",
+    "player": {
+      "definitionId": "player",
+      "position": {
+        "x": 2,
+        "y": 5
+      }
+    },
+    "missions": [],
+    "compositions": [
+      {
+        "definitionId": "trainingCamp",
+        "key": "training",
+        "origin": {
+          "y": 5,
+          "x": 5
+        }
+      }
+    ]
+  },
+  {
+    "id": "rivals",
+    "name": "02 — Lealdades rivais",
+    "player": {
+      "definitionId": "player",
+      "position": {
+        "x": 2,
+        "y": 5
+      }
+    },
+    "missions": [
+      "eliminateTarget"
+    ],
+    "compositions": [
+      {
+        "definitionId": "rivalSettlement",
+        "key": "rivals",
+        "origin": {
+          "y": 0,
+          "x": 0
+        },
+        "bindings": {
+          "player": "root#player"
+        }
+      }
+    ]
+  },
+  {
+    "id": "social",
+    "name": "03 — Reatividade social",
+    "player": {
+      "definitionId": "player",
+      "position": {
+        "x": 3,
+        "y": 5
+      }
+    },
+    "missions": [],
+    "compositions": [
+      {
+        "definitionId": "socialGroup",
+        "key": "social",
+        "origin": {
+          "y": 5,
+          "x": 4
+        }
+      }
+    ]
+  }
+]

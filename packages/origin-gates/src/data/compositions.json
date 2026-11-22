@@ -1,0 +1,176 @@
+[
+  {
+    "id": "trainingCamp",
+    "characters": [
+      {
+        "key": "guardian",
+        "definitionId": "enemy",
+        "position": {
+          "y": 0,
+          "x": 0
+        }
+      }
+    ]
+  },
+  {
+    "id": "rivalSettlement",
+    "characters": [
+      {
+        "key": "governmentRepresentative",
+        "definitionId": "governmentRepresentative",
+        "position": {
+          "y": 2,
+          "x": 3
+        },
+        "faction": "government",
+        "offer": {
+          "mission": "eliminateTarget",
+          "name": "Eliminar alvo rebelde",
+          "target": "resistanceTarget",
+          "opponent": "resistance",
+          "spawn": {
+            "y": 3,
+            "x": 8
+          }
+        }
+      },
+      {
+        "key": "resistanceRepresentative",
+        "definitionId": "resistanceRepresentative",
+        "position": {
+          "y": 2,
+          "x": 5
+        },
+        "faction": "resistance",
+        "offer": {
+          "mission": "eliminateTarget",
+          "name": "Eliminar alvo governista",
+          "target": "governmentTarget",
+          "opponent": "government",
+          "spawn": {
+            "y": 8,
+            "x": 8
+          }
+        }
+      }
+    ],
+    "factions": [
+      {
+        "key": "government",
+        "definitionId": "government"
+      },
+      {
+        "key": "resistance",
+        "definitionId": "resistance"
+      }
+    ],
+    "relations": [
+      {
+        "intensity": 50,
+        "target": {
+          "parameter": "player"
+        },
+        "source": "government",
+        "definitionId": "reputation"
+      },
+      {
+        "intensity": 50,
+        "target": {
+          "parameter": "player"
+        },
+        "source": "resistance",
+        "definitionId": "reputation"
+      }
+    ],
+    "parameters": {
+      "player": {
+        "kind": "character"
+      }
+    }
+  },
+  {
+    "id": "socialGroup",
+    "characters": [
+      {
+        "key": "victim",
+        "definitionId": "victim",
+        "position": {
+          "y": 0,
+          "x": 0
+        },
+        "label": "Vítima"
+      },
+      {
+        "key": "A",
+        "definitionId": "observer",
+        "position": {
+          "y": -1,
+          "x": 0
+        },
+        "label": "A"
+      },
+      {
+        "key": "B",
+        "definitionId": "observer",
+        "position": {
+          "y": 0,
+          "x": 1
+        },
+        "label": "B"
+      },
+      {
+        "key": "C",
+        "definitionId": "observer",
+        "position": {
+          "y": 1,
+          "x": -1
+        },
+        "label": "C"
+      },
+      {
+        "key": "D",
+        "definitionId": "observer",
+        "position": {
+          "y": -5,
+          "x": -4
+        },
+        "label": "D"
+      },
+      {
+        "key": "E",
+        "definitionId": "observer",
+        "position": {
+          "y": 2,
+          "x": 0
+        },
+        "label": "E"
+      }
+    ],
+    "relations": [
+      {
+        "intensity": 90,
+        "target": "victim",
+        "source": "A",
+        "definitionId": "friendship"
+      },
+      {
+        "intensity": 20,
+        "target": "victim",
+        "source": "B",
+        "definitionId": "friendship"
+      },
+      {
+        "intensity": 90,
+        "target": "victim",
+        "source": "D",
+        "definitionId": "friendship"
+      },
+      {
+        "intensity": 90,
+        "target": "E",
+        "source": "victim",
+        "definitionId": "friendship"
+      }
+    ]
+  }
+]
