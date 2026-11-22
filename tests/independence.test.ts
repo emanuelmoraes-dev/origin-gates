@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import ts from 'typescript';
 
 it('the whole core and programmatic proof have no transitive Origin Gates content or Phaser dependency', () => {
-  const roots = [...ts.sys.readDirectory('src/game', ['.ts']), 'tests/programmatic.test.ts', 'tests/engine-api.test.ts', 'examples/programmatic-world.ts'];
+  const roots = [...ts.sys.readDirectory('src/game', ['.ts']), 'tests/programmatic.test.ts', 'tests/engine-api.test.ts', 'tests/compositions.test.ts', 'tests/composition-integrity.test.ts', 'examples/programmatic-world.ts', 'examples/compositions.ts'];
   const visited = new Set<string>();
   const walk = (path: string) => {
     if (visited.has(path)) return;

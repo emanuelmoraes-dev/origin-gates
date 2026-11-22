@@ -18,7 +18,7 @@ export interface ObjectDefinition {
   readonly interactions?: readonly InteractionBinding[];
   readonly offer?: OfferDefinition;
 }
-export interface Identity { readonly id: string; readonly definitionId: string }
+export interface Identity { readonly id: string; readonly definitionId: string; readonly createdByCompositionId?: string }
 export interface OfferDefinition {
   readonly mission: string; readonly name: string; readonly target: string;
   readonly opponent: string; readonly spawn: Position;
@@ -62,7 +62,19 @@ export interface RelationState extends Identity {
   readonly kind: 'relation'; readonly sourceId: string; readonly targetId: string;
   intensity: number;
 }
-export type WorldInstance = EntityState | MissionState | FactionState | RelationState;
+export interface CompositionState extends Identity {
+  readonly kind: 'composition';
+  readonly origin: Position;
+  readonly key?: string;
+  readonly symbols: Readonly<Record<string, string>>;
+  readonly bindings: Readonly<Record<string, string>>;
+  readonly roles: Record<string, string | null>;
+}
+export type WorldInstance = EntityState | MissionState | FactionState | RelationState | CompositionState;
+/** Sufficient for reference/category validation, including not-yet-created members. */
+export type InstanceIdentity = Pick<WorldInstance, 'id' | 'definitionId' | 'kind'>;
+export interface InstanceLookup { readonly instances: Readonly<Record<string, InstanceIdentity>> }
+export const instanceKinds: readonly WorldInstance['kind'][] = ['character', 'faction', 'mission', 'relation', 'composition'];
 export interface IdentityStore { nextId: number; instances: Record<string, WorldInstance>; readonly audit?: AuditLog }
 export function createIdentityStore(audit = new AuditLog()): IdentityStore {
   return Object.defineProperty({ nextId: 1, instances: {} }, 'audit', { value: audit, enumerable: false });
@@ -72,22 +84,28 @@ export function registerInstance(store: IdentityStore, instance: WorldInstance, 
   store.instances[instance.id] = instance;
   note(current, { category: 'instance', status: 'created', instanceIds: [instance.id], definitionIds: [instance.definitionId], data: inspectInstance(instance) });
 }
-export function identity(store: IdentityStore, definitionId: string, scope?: AuditScope): Identity {
+export const instanceIdAt = (index: number) => `entity_${String(index).padStart(6, '0')}`;
+export function identity(store: IdentityStore, definitionId: string, scope?: AuditScope, createdByCompositionId?: string): Identity {
+  if (createdByCompositionId !== undefined) resolve(store, createdByCompositionId, 'composition');
   const source = auditSource(store, scope);
   const before = store.nextId;
-  const result = { id: `entity_${String(store.nextId++).padStart(6, '0')}`, definitionId };
+  const result: Identity = { id: instanceIdAt(store.nextId++), definitionId, ...(createdByCompositionId === undefined ? {} : { createdByCompositionId }) };
   note(auditScope(source), { category: 'instance', status: 'allocated', instanceIds: [result.id], definitionIds: [definitionId], data: { nextIdBefore: before, nextIdAfter: store.nextId } });
   return result;
 }
-export function resolve<K extends WorldInstance['kind']>(store: IdentityStore, id: string, kind: K): Extract<WorldInstance, { kind: K }> {
+export function resolve<K extends WorldInstance['kind']>(store: IdentityStore, id: string, kind: K): Extract<WorldInstance, { kind: K }>;
+export function resolve<K extends WorldInstance['kind']>(store: InstanceLookup, id: string, kind: K): InstanceIdentity & { kind: K };
+export function resolve<K extends WorldInstance['kind']>(store: InstanceLookup, id: string, kind: K): InstanceIdentity & { kind: K } {
   const entity = store.instances[id];
   if (!entity || entity.kind !== kind) throw new Error(`Invalid ${kind} reference: ${id}`);
-  return entity as Extract<WorldInstance, { kind: K }>;
+  return entity as InstanceIdentity & { kind: K };
 }
 export interface GameState extends IdentityStore {
   scenario: string;
   readonly map: WorldMap;
   readonly definitions: DefinitionRegistry;
+  readonly rootSymbols: Record<string, string>;
+  readonly compositionAliases: Record<string, string>;
   factionDefinitions: Readonly<Record<string, FactionDefinition>>;
   eventDefinitions: Readonly<Record<string, EventDefinition>>;
   player: EntityState;
@@ -103,17 +121,18 @@ export interface GameState extends IdentityStore {
   processedFacts: WeakSet<Fact>;
 }
 
-export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[], scope?: AuditScope): EntityState {
+export function createEntity(definition: ObjectDefinition, position: Position, store: IdentityStore, interactions?: readonly InteractionBinding[], scope?: AuditScope, createdByCompositionId?: string): EntityState {
   return audited(auditSource(store, scope), { category: 'operation', definitionIds: definition ? [definition.id] : [], data: { type: 'createEntity' } }, current => {
   if (!definition) throw new Error('Unknown character definition');
-  const entity: EntityState = { ...identity(store, definition.id, current), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions, references: {} };
+  const entity: EntityState = { ...identity(store, definition.id, current, createdByCompositionId), kind: 'character', definition, position: { ...position }, hp: definition.maxHp, attributes: { damage: definition.damage ?? 10 }, interactions, references: {} };
   registerInstance(store, entity, current);
   return entity;
   });
 }
 
-export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number, scope?: AuditScope): RelationState {
-  return audited(auditSource(world, scope), { category: 'operation', instanceIds: [sourceId, targetId], definitionIds: [definitionId], data: { type: 'createRelation', intensity } }, current => {
+/** Shared pure validation, also used against a prospective composition lookup. */
+type RelationValidationWorld = Pick<GameState, 'relationDefinitions' | 'relationInstances' | 'reactionDefinitions'> & InstanceLookup;
+export function prepareRelation(world: RelationValidationWorld, definitionId: string, sourceId: string, targetId: string, intensity: number) {
   const definition = validateRelationEndpoints(world, definitionId, sourceId, targetId);
   const value = normalizeIntensity(definition, intensity);
   if (definition.unique && world.relationInstances.some(r => r.definitionId === definitionId && r.sourceId === sourceId && r.targetId === targetId)) {
@@ -124,7 +143,12 @@ export function createRelation(world: GameState, definitionId: string, sourceId:
     if (!rule) throw new Error(`Unknown reaction rule: ${ruleId}`);
     return { ruleId, on: rule.on };
   });
-  const relation: RelationState = { ...identity(world, definition.id, current), kind: 'relation', sourceId, targetId, intensity: value };
+  return { definition, value, rules };
+}
+export function createRelation(world: GameState, definitionId: string, sourceId: string, targetId: string, intensity: number, scope?: AuditScope, createdByCompositionId?: string): RelationState {
+  return audited(auditSource(world, scope), { category: 'operation', instanceIds: [sourceId, targetId], definitionIds: [definitionId], data: { type: 'createRelation', intensity } }, current => {
+  const { definition, value, rules } = prepareRelation(world, definitionId, sourceId, targetId, intensity);
+  const relation: RelationState = { ...identity(world, definition.id, current, createdByCompositionId), kind: 'relation', sourceId, targetId, intensity: value };
   registerInstance(world, relation, current);
   for (const rule of rules) (world.factSubscriptions[rule.on] ??= []).push({ relationId: relation.id, ruleId: rule.ruleId });
   note(current, { category: 'dispatch', status: 'subscribed', instanceIds: [relation.id], data: { rules } });
@@ -132,7 +156,7 @@ export function createRelation(world: GameState, definitionId: string, sourceId:
   });
 }
 
-function validateRelationEndpoints(world: GameState, definitionId: string, sourceId: string, targetId: string): RelationDefinition {
+function validateRelationEndpoints(world: Pick<GameState, 'relationDefinitions'> & InstanceLookup, definitionId: string, sourceId: string, targetId: string): RelationDefinition {
   const definition = world.relationDefinitions[definitionId];
   if (!definition || definition.id !== definitionId || typeof definition.unique !== 'boolean' || !definition.sourceKinds?.length || !definition.targetKinds?.length) throw new Error('Invalid relation definition');
   for (const [id, kinds] of [[sourceId, definition.sourceKinds], [targetId, definition.targetKinds]] as const) {

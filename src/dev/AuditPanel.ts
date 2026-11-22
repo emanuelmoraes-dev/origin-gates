@@ -5,8 +5,8 @@ import { buildCausalTree, filterAuditRecords, type AuditFilter, type CausalIssue
 import { createDiagnosticExport, diagnosticFilename } from './diagnostics';
 import './audit-panel.css';
 
-const categories: readonly AuditCategory[] = ['world', 'definition', 'instance', 'interaction', 'command', 'selection', 'condition', 'outcome', 'operation', 'mutation', 'fact', 'dispatch', 'reaction', 'legacy', 'movement', 'failure'];
-const kinds: readonly WorldInstance['kind'][] = ['character', 'faction', 'mission', 'relation'];
+const categories: readonly AuditCategory[] = ['world', 'definition', 'composition', 'reference', 'role', 'instance', 'interaction', 'command', 'selection', 'condition', 'outcome', 'operation', 'mutation', 'fact', 'dispatch', 'reaction', 'legacy', 'movement', 'failure'];
+const kinds: readonly WorldInstance['kind'][] = ['character', 'faction', 'mission', 'relation', 'composition'];
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string, className?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);

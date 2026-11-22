@@ -1,5 +1,5 @@
 export type AuditValue = null | boolean | number | string | readonly AuditValue[] | { readonly [key: string]: AuditValue };
-export type AuditCategory = 'definition' | 'world' | 'instance' | 'interaction' | 'command' | 'selection' | 'condition' | 'outcome' | 'operation' | 'mutation' | 'fact' | 'dispatch' | 'reaction' | 'legacy' | 'movement' | 'failure';
+export type AuditCategory = 'composition' | 'role' | 'reference' | 'definition' | 'world' | 'instance' | 'interaction' | 'command' | 'selection' | 'condition' | 'outcome' | 'operation' | 'mutation' | 'fact' | 'dispatch' | 'reaction' | 'legacy' | 'movement' | 'failure';
 export interface AuditRecord {
   readonly id: string; readonly sequence: number; readonly worldId: string;
   readonly traceId: string; readonly parentId?: string;

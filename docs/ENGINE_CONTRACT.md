@@ -435,3 +435,148 @@ Os 157 testes anteriores foram preservados; adaptações restringem-se aos impor
 Mantidos: mutabilidade dos internos, transações/falhas parciais, memória narrativa, deduplicação por identidade do objeto-fato, entrega assíncrona de auditoria, retenção limitada e reatividade legada separada. Limitações explícitas novas: duplicatas idênticas também são rejeitadas; referências entre lotes exigem disponibilidade anterior; não há atualização retroativa de mundos/assinaturas; a seleção de missões habilitadas precisa ser decidida na montagem. Não foram acrescentadas dependências externas.
 
 Typecheck/build não substituem validação visual. Os testes não exercitam DOM/Phaser, download real ou teclado no navegador. Permanecem necessárias a validação manual completa dos cenários 02/03 após 0.3.x e a conferência visual dos três cenários e ferramentas de diagnóstico nesta versão.
+
+## Composições e referências contextuais — 0.4.1
+
+Esta versão adiciona montagem coletiva à API 0.4.0; não migra os cenários de produção nem seus contextos de eventos. `src/content/originGates.ts` continua montando os três cenários sobre as fábricas compartilhadas. Não há pacotes separados, dependências novas ou conteúdo do Origin Gates/Phaser importado pelo núcleo.
+
+### Definição e instância
+
+`DefinitionBatch` passa a aceitar `compositions: CompositionDefinition[]`. Cada definição possui `id` e, opcionalmente, `characters`, `factions`, `relations`, `parameters` e `roles`. Registro aditivo, validação do lote inteiro, referências cruzadas no mesmo lote, cópias congeladas e isolamento por mundo conservam as garantias da 0.4.0. Não há composição aninhada, loops, condicionais ou quantidades aleatórias.
+
+| Campo | Contrato |
+|---|---|
+| `characters[]` | `key`, `definitionId`, `position` local; opcionais `label`, `faction`, `interactions`, `offer`. `faction` é referência contextual, convertida em `factionId`. Interações da instância substituem as da definição, inclusive `[]`. |
+| `factions[]` | `key` e `definitionId`; cada montagem cria facções distintas. |
+| `relations[]` | `definitionId`, `source`, `target`, `intensity`, `key?`; pontas são resolvidas uma vez e armazenadas como IDs concretos. |
+| `parameters` | Mapa `nome: { kind }` de referências externas obrigatórias, fornecidas em `bindings` ao instanciar. Não aceita parâmetros numéricos ou expressões. |
+| `roles` | Mapa `nome: { kind, initial?, allowVacant? }`. Um ocupante ou `null`; `allowVacant` é `true` por padrão. Se `false`, exige ocupante inicial e impede desocupação. |
+| Referência na definição | Texto ou `NarrativeReference`; `{ parameter: 'nome' }` identifica explicitamente um parâmetro. Não há lookup de instância por ID de definição. |
+| `offer` de personagem | `mission`, `name`, `target` são IDs/dados de definição; `opponent` é referência contextual de facção; `spawn` é posição local futura. A fábrica recebe uma `MissionOffer` com `opponentId` concreto e spawn global. |
+
+Uma definição de personagem com template de oferta exige `offer` explícita na composição. Não se adivinha qual instância de uma facção deve substituir `OfferDefinition.opponent`, nem se transforma indiscriminadamente o template de produção. Ofertas de composição podem reutilizar os mesmos IDs de missão/alvo; seus vínculos e coordenadas são próprios de cada montagem.
+
+A instância `kind: 'composition'` pertence a `world.instances`, usa a mesma identidade e contém `origin`, `key?` (alias), `symbols`, `bindings` concretos e `roles`. Não armazena cópias dos estados de seus membros. `symbols.self` identifica a própria composição; as demais chaves identificam personagens, facções e relações nomeadas criados nessa montagem. Relações sem chave continuam canônicas e identificáveis por ID/procedência. `bindings` permanece separado dos símbolos dos novos membros.
+
+### Exemplo público completo
+
+`examples/compositions.ts` contém um exemplo completo executado pelos testes. Abaixo, sua parte essencial, sem JSON ou Phaser:
+
+```ts
+import { createEngine } from './src/game';
+
+const engine = createEngine();
+engine.registerDefinitions({
+  characters: [{ id: 'citizen', name: 'Cidadão', maxHp: 100, color: '#ffffff' }],
+  relations: [{ id: 'gratitude', name: 'Gratidão', sourceKinds: ['character'],
+    targetKinds: ['character'], unique: true, reactions: [] }],
+  compositions: [{ id: 'court', characters: [
+    { key: 'Arthur', definitionId: 'citizen', position: { x: 0, y: 0 } },
+    { key: 'Edward', definitionId: 'citizen', position: { x: 1, y: 0 } },
+  ], roles: { rei: { kind: 'character', initial: 'Arthur' } } }],
+});
+const world = engine.createWorld({
+  map: Array.from({ length: 20 }, () => Array.from({ length: 20 }, () => 'land' as const)),
+  player: { definitionId: 'citizen', position: { x: 0, y: 0 } },
+});
+const court = world.instantiateComposition({
+  definitionId: 'court', key: 'olimpo', origin: { x: 5, y: 5 },
+});
+const arthur = court.resolve('Arthur');
+const gratitude = world.createRelation({ definitionId: 'gratitude',
+  source: 'root#player', target: 'olimpo#<rei>', intensity: 80 });
+world.assignRole({ compositionId: court.id, role: 'rei',
+  instanceId: court.resolve('Edward').id });
+// court.resolve('<rei>') agora identifica Edward.
+// court.resolve('Arthur') e gratitude.targetId continuam identificando Arthur.
+console.log(arthur, world.inspect.find(gratitude.id));
+```
+
+O comentário `gratitude.targetId` se refere ao estado consultado pelo inspetor; o handle não expõe esse campo vivo. Os IDs continuam únicos no mundo receptor, não globalmente entre mundos. O consumidor deve conservar o mundo associado ao ID; strings idênticas de mundos diferentes não carregam um token de propriedade capaz de detectar sua origem externa.
+
+### API pública, escopos e gramática
+
+| Entrada | Resultado |
+|---|---|
+| `world.instantiateComposition({ definitionId, origin, key?, bindings?, context? })` | `CompositionHandle` congelado com `id`, `definitionId`, `kind`, `resolve(ref, kind?)` e `tryResolve(ref, kind?)`. |
+| `world.resolveReference(ref, { compositionId?, kind? }?)` | Handle da instância exigida; lança erro tipado em falha ou papel vago. |
+| `world.tryResolveReference(ref, context?)` | Handle ou `undefined` **somente para papel válido desocupado**; outras falhas continuam exceções. |
+| `world.assignRole({ compositionId, role, instanceId })` | Atribuição controlada; `instanceId: null` desocupa quando permitido. |
+| `world.createCharacter({ ..., key? })` | Criação individual com símbolo opcional em `root`. |
+| `world.createFaction(definitionId, { key? }?)` | Mesmo contrato anterior, com símbolo raiz opcional. |
+| `world.createRelation({ definitionId, intensity, source, target, context?, key? })` | Resolve pontas contextuais imediatamente e chama a fábrica existente. A forma anterior com `sourceId`/`targetId` continua disponível; não se misturam as formas. `key` opcional pertence ao root. |
+| `parseReference(textoOuEstrutura)` | Produz `NarrativeReference` estruturada e congelada; não faz lookup. |
+
+`root` é escopo de resolução, não uma instância/composição artificial. `root#player` sempre referencia o jogador inicial; `player.key` opcional cria um segundo símbolo raiz. Instâncias individuais não precisam de chave. Símbolos raiz e aliases de composição têm namespaces separados: `root#court` e `court#self` são inequívocos. Símbolos locais e papéis também têm namespaces distintos (`rei` versus `<rei>`); parâmetros usam `{ parameter }` explicitamente. Entre personagens/facções/relações locais, chaves são únicas. `self` é reservado como símbolo local da composição.
+
+Nomes usam `[A-Za-z_][A-Za-z0-9_-]*`. O namespace `entity_` seguido apenas de dígitos é reservado. Aliases não podem ser `root`, repetir outro alias ou conter delimitadores. A gramática textual é centralizada em `references.ts`:
+
+| Texto | Forma estruturada e significado |
+|---|---|
+| `entity_000001` | `{ type: 'instance', id: 'entity_000001' }`; IDs textuais usam ao menos seis dígitos. |
+| `Arthur` | `{ type: 'symbol', key: 'Arthur' }`; exige `compositionId` explícito ou handle de composição. |
+| `<rei>` | `{ type: 'role', key: 'rei' }`; ocupante atual no contexto explícito. |
+| `root#kosmos` | `{ type: 'symbol', scope: 'root', key: 'kosmos' }`. |
+| `olimpo#Arthur` | `{ type: 'symbol', scope: 'olimpo', key: 'Arthur' }`; alias de composição concreta. |
+| `olimpo#<rei>` | `{ type: 'role', scope: 'olimpo', key: 'rei' }`. |
+
+Não há tentativa de interpretar um símbolo como ID de definição ou de procurar outro escopo. `<rei>` não é um símbolo literal e `root` não possui papéis. `ReferenceResolutionError.code` distingue `invalidSyntax`, `missingContext`, `compositionNotFound`, `aliasNotFound`, `symbolNotFound`, `roleNotFound`, `roleVacant`, `kindMismatch` e `instanceNotFound`. Consultas puras não auditam por padrão. Um ID concreto inexistente durante a montagem não pode ser satisfeito por adivinhação de um ID que ainda será criado.
+
+### Duas cidades, bindings e relações entre composições
+
+`tests/fixtures/compositions.ts` declara `rivalCity` com duas facções, representantes, ofertas locais e reputação facção → parâmetro `player`. É conteúdo literal TypeScript de prova, independente dos JSONs. A prova B em `tests/compositions.test.ts` executa este fluxo sobre um mapa 40 × 24:
+
+```ts
+// Após registrar a definição rivalCity da fixture e criar o mundo:
+const a = world.instantiateComposition({ definitionId: 'rivalCity', key: 'cityA',
+  origin: { x: 2, y: 2 }, bindings: { player: 'root#player' } });
+const b = world.instantiateComposition({ definitionId: 'rivalCity', key: 'cityB',
+  origin: { x: 22, y: 2 }, bindings: { player: world.player.id } });
+const governmentA = a.resolve('government');
+const governmentB = world.resolveReference({ type: 'symbol', scope: 'cityB', key: 'government' });
+// governmentA.id !== governmentB.id; reputações e missões são independentes.
+```
+
+Relações globais podem conectar essas facções, personagens, elementos de root ou composições, se `sourceKinds`/`targetKinds` permitirem. A chave local da relação e `createdByCompositionId` não restringem suas pontas. Unicidade continua sendo definição + origem + destino; não significa exclusividade de cargo ou pertencimento. `membership` na fixture é somente uma definição de relação, sem arrays paralelos de membros atuais.
+
+Bindings aceitam IDs, formas estruturadas ou textos como `family#prince` e `court#<rei>`. `context` no pedido de instanciação serve **apenas para referências não qualificadas dos bindings**, resolvidas no mundo já existente. As referências dentro da definição usam a nova composição. Todos os parâmetros declarados são obrigatórios e têm categoria validada. Um binding é capturado em `bindings.nome = id`: mudar depois o papel usado como entrada não altera o binding. Um príncipe externo pode ocupar o papel militar e receber relações de soldados, mantendo posição, identidade e origem familiar; a prova E verifica isso sem duplicação. Dependências de composições externas ainda inexistentes falham, sem resolução futura/circular.
+
+### Coordenadas, procedência e papéis
+
+Somente `characters[].position` e `characters[].offer.spawn` são locais: somam `origin.x/y`. `CompositionConfig.origin` e posições/`MissionOffer.spawn` das fábricas individuais permanecem globais. Não se percorrem propriedades arbitrárias `x/y`, não se movem bindings e não se reescrevem as definições. A origem é uma âncora inteira finita; quem precisa estar em terra dentro do mapa são os pontos concretos declarados. Nenhuma rotação/escala é aplicada.
+
+Na montagem coletiva, personagens devem estar em terra dentro do mapa e não sobrepor personagens vivos já existentes ou outros personagens planejados. Personagens mortos não ocupam tiles. Ofertas futuras são verificadas estaticamente para terra/limites, mas seus tiles não são reservados nem bloqueados por ocupação atual. A ocupação dinâmica de `spawnTarget` conserva a política anterior da criação individual, que **não rejeita sobreposição**; o teste explicita essa limitação em vez de alterar regras de missão nesta versão. Um futuro tratamento de spawn ocupado deve definir sua própria semântica de recusa, fora desta entrega.
+
+Personagens, facções e relações criados durante a montagem recebem `createdByCompositionId` desde seu registro inicial. Esse ID é origem estrutural estável, não facção atual, nacionalidade ou pertencimento. Mover uma instância, ocupar papel em outra composição ou criar uma relação de organização não transfere origem. Elementos externos não recebem essa propriedade. Missões/alvos criados posteriormente por operações de um representante **não herdam automaticamente** sua composição; o spawn global já resolvido na oferta é suficiente para a prova das duas cidades.
+
+Papéis têm categoria e zero/um ocupante. A atribuição valida composição/papel/ID existentes e categoria no mundo receptor. Não consulta HP nem interpreta o significado narrativo do papel. Trocar Arthur por Edward não redireciona o símbolo `Arthur`, relações pessoais, missões existentes ou origem. Não são emitidos fatos de sucessão nem consequências políticas. `roles` não cria instâncias canônicas adicionais.
+
+### Preparação, confirmação e garantias de falha
+
+Antes de consumir IDs, `prepareComposition` resolve bindings existentes, prepara um lookup prospectivo de identidades/categorias, resolve referências locais/papéis, traduz posições e chama os validadores puros extraídos das fábricas (`prepareCharacter`, `prepareRelation`). A preparação não chama as fábricas nem executa eventos/operações. Inclui referências de ofertas, missões habilitadas, sobreposição, categorias e duplicatas de relações também entre participantes externos. Símbolos duplicados/inexistentes e categorias estáticas já são validados ao registrar o lote.
+
+Relações podem referenciar relações declaradas posteriormente; a confirmação usa ordenação por dependências, com percurso determinístico na ordem de declaração. Papéis iniciais também podem referenciar papéis posteriores. Ciclos de dependência de relações ou papéis iniciais são rejeitados antes da criação. Não existe migração/rebind tardio de pontas. IDs previstos são ajustados à ordem final; nenhuma alocação narrativa é registrada durante a preparação.
+
+Após validação, cria-se a composição, depois facções, personagens, relações em ordem de dependência, papéis iniciais e alias. As mesmas fábricas registram membros, integram personagens ao mapa e instalam inscrições reativas. A guarda síncrona de registro aditivo cobre toda a montagem. `assignRole` é também o caminho usado para atribuições iniciais.
+
+**Garantia verificada:** erros previsíveis cobertos pela preparação não deixam instâncias, aliases, papéis, inscrições ou consumo de IDs no mundo. Testes com falha tardia de papel, duplicatas externas, categorias incompatíveis, bindings, ciclos, ofertas e posições comparam snapshots anteriores/posteriores e o próximo ID; uma tentativa rejeitada com amizade planejada também é seguida de ataque para verificar ausência de reação fantasma.
+
+Isso não é uma transação universal. Falha inesperada de infraestrutura durante confirmação pode deixar criação parcial; não há rollback. Escritas externas por módulos internos ainda podem violar as invariantes, inclusive durante chamadas reentrantes de código diagnóstico personalizado. A auditoria continua descrevendo `stateReverted: false` nessas falhas. Não há remoção, reparação automática ou persistência.
+
+### Auditoria, inspeção e evidências
+
+Categorias novas: `composition`, `reference`, `role`; filtro de instâncias inclui `composition`. A composição aparece no inspetor com origem, alias, símbolos, bindings e papéis. A exportação schema 1 continua incluindo todo o histórico retido e snapshots de todas as instâncias canônicas, incluindo composições. Root e tabela de aliases são contextos auxiliares, sem instância artificial; bindings de root/aliases são auditados, e o alias de cada composição também está em seu snapshot. O schema não adiciona um snapshot separado do mapa de símbolos raiz.
+
+Exemplo da cadeia de montagem: `composition/start` (definição, origem, alias, bindings solicitados) → `reference/considered` e `reference/resolved` → `composition/validated` → alocações/criações e operações dos membros → `role`/mutações `roles.rei` → alias vinculado → `composition/instantiated`. Todas essas ocorrências pertencem ao mesmo `traceId`, com pais explícitos. Resoluções prospectivas são marcadas `stage: 'preparation'` e usam IDs na ordem final; não afirmam que as instâncias já foram criadas. Em falhas de preparação, a tentativa e a exceção ficam diagnosticáveis sem eventos de alocação/criação.
+
+Posteriores atribuições registram ocupante anterior/posterior e mantêm snapshots antigos destacados. Consultas puras não geram registros. Auditoria desligada conserva os resultados; as provas comparam estado de composições, combate, missão e papel nas duas políticas. Retenção pode remover ancestrais. Não há histórico de registro pré-mundo, conforme contrato 0.4.0.
+
+Novos caminhos de mutação instrumentados: `rootSymbols` na criação individual/jogador; identidade e registro de `composition`; procedência no snapshot inicial dos membros; `symbols`/`bindings` configurados na criação; `compositionAliases` após montagem; `roles[chave]` pela atribuição controlada. Mapa de personagens e inscrições reativas continuam sendo mantidos pelas fábricas já instrumentadas. Lookup prospectivo, IDs previstos e ordenação são temporários, sem mutação narrativa. Permanecem fora da cobertura as escritas diretas por internos e o estado visual, como nas versões anteriores.
+
+Os 212 testes anteriores continuam com as mesmas propriedades. `tests/compositions.test.ts` contém as provas A–F; `tests/composition-integrity.test.ts` cobre registro, isolamento, gramática, referências, papel vago/obrigatório, falhas sem efeitos, relações futuras e o exemplo público. `tests/independence.test.ts` inclui transitivamente esses testes, fixtures, exemplos e todos os módulos do núcleo. Nenhuma prova usa imports internos para completar criação/resolução. Execute `npm test` ou `npm test -- tests/compositions.test.ts tests/composition-integrity.test.ts`.
+
+Débitos tratados: resolução contextual antes restrita ao adaptador ganha infraestrutura genérica; DT-18 avança com criação coletiva e papéis controlados; DT-07 avança com validação estrutural/contextual anterior à montagem; DT-01 conserva integração pelas fábricas oficiais; DT-17 continua resolvido para a independência do núcleo. Permanecem parciais validação semântica de todo contexto, encapsulamento dos internos, falhas parciais/ausência de transações, memória/persistência, auditoria assíncrona e polling legado de missões. Produção ainda usa o adaptador interno, cuja migração e separação de pacotes ficam para 0.4.2.
+
+Limitações deliberadas: nomes simbólicos ASCII, papéis singulares, parâmetros somente de instâncias, nenhuma composição aninhada ou remoção, ciclos de montagem rejeitados, símbolos históricos imutáveis, relações com pontas capturadas, sem reserva/detecção dinâmica de spawn, sem procedência automática de criações futuras. Os participantes de execução `actor`, `target`, `relation.source` e `relation.target` **não** passaram a interpretar referências de composição. Condições/operações que exigem personagens continuam rejeitando outras categorias, mesmo quando a relação permite uma composição.
+
+Não foram adicionados testes de DOM/Phaser. Build/typecheck e regressão de lógica não confirmam layout, controles ou downloads reais. A validação manual anterior pendente dos cenários 02/03 e a conferência do filtro/JSON de composição no painel continuam necessárias.

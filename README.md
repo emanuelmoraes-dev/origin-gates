@@ -1,4 +1,4 @@
-# Origin Gates — 0.4.0: Engine independente e mundos programáticos
+# Origin Gates — 0.4.1: Composições narrativas e referências contextuais
 
 Protótipo em TypeScript, Vite e Phaser 3. Requer Node.js 22.12+.
 
@@ -46,6 +46,8 @@ O núcleo oferece `world.audit.records()`, `subscribe()`, `clear()` e `stats()`,
 - `src/data/scenarios.json`: nomes do seletor, posições iniciais, facções/relações iniciais e definições de missão habilitadas. O mapa continua exclusivamente em TypeScript.
 - `src/data/events/social.json`: aceitação, entrega, reação à morte, limiar mínimo de reputação, deltas, faixas de recompensa e teto de dano. Os limites de reputação 0–100 pertencem a `relations.json`.
 - `src/game/index.ts`: API pública independente de JSON e Phaser: `createEngine()`, registro aditivo, construção, criação de instâncias, comandos, inspeção e diagnósticos. Veja o [exemplo executado pelos testes](examples/programmatic-world.ts) e o [contrato 0.4.0](docs/ENGINE_CONTRACT.md#independência-e-construção-programática--040).
+- `src/game/composition-types.ts` e `compositions.ts`: definições reutilizáveis, preparação validada e instanciação coletiva sobre as fábricas existentes, com coordenadas locais, bindings e papéis.
+- `src/game/references.ts`: gramática e resolução centralizadas de IDs, símbolos e papéis. Veja o [exemplo público executável](examples/compositions.ts) e o [contrato 0.4.1](docs/ENGINE_CONTRACT.md#composições-e-referências-contextuais--041).
 - `src/content/originGates.ts`: adaptador dos JSONs e montagem dos três cenários sobre os mesmos serviços usados pela API.
 - `src/game/world.ts`: interações, comandos e reações legadas sobre definições fornecidas pelo consumidor.
 - `src/game/interactions.ts`: seleciona o primeiro evento aplicável na lista `interactions` do objeto ou da instância. Associações, prioridade, contexto e limites estão documentados em [docs/ENGINE_CONTRACT.md](docs/ENGINE_CONTRACT.md).

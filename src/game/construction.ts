@@ -1,6 +1,7 @@
 import { AuditLog, audited, note, type AuditOptions, type AuditScope } from './audit';
 import { DefinitionRegistry, ownData } from './definitions';
 import { createCharacterInstance, type CharacterConfig } from './instances';
+import { bindRootSymbol } from './references';
 import { createIdentityStore, type FactionState, type GameState, type IdentityStore, type MissionState, type RelationState, type WorldMap } from './state';
 
 export interface WorldConfig {
@@ -37,6 +38,7 @@ export function createWorldState(definitions: DefinitionRegistry, config: WorldC
     const world = {
       ...createIdentityStore(audit), scenario: config.scenarioId ?? 'external', map, definitions: registry,
       entities: [],
+      rootSymbols: Object.create(null), compositionAliases: Object.create(null),
       get missions() { return Object.values((this as IdentityStore).instances).filter((item): item is MissionState => item.kind === 'mission'); },
       get factions() { return Object.values((this as IdentityStore).instances).filter((item): item is FactionState => item.kind === 'faction'); },
       get relationInstances() { return Object.values((this as IdentityStore).instances).filter((item): item is RelationState => item.kind === 'relation'); },
@@ -48,6 +50,7 @@ export function createWorldState(definitions: DefinitionRegistry, config: WorldC
     Object.defineProperty(world, 'audit', { value: audit, enumerable: false });
     note(current, { category: 'definition', status: 'attached', definitionIds: Object.values(catalog).flatMap(records => Object.keys(records)), data: { source: 'immutableRegistrySnapshot' } });
     world.player = createCharacterInstance(world, config.player, current, false);
+    if (config.player.key !== 'player') bindRootSymbol(world, 'player', world.player.id, current);
     note(current, { category: 'world', status: 'configured', instanceIds: [world.player.id], data: { auxiliary: 'player', map } });
     return world;
   });

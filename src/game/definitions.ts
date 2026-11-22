@@ -1,6 +1,9 @@
 import type { EventDefinition, ReactionDefinition } from './events';
 import type { InteractionBinding, MissionDefinition, ObjectDefinition, RelationDefinition } from './state';
 import { audited, note, type AuditLog, type AuditScope } from './audit';
+import type { CompositionDefinition } from './composition-types';
+import { parseReference, validateName, type ReferenceInput } from './references';
+import { instanceKinds, type WorldInstance } from './state';
 
 export interface FactionDefinition { readonly id: string; readonly name: string }
 export interface DefinitionBatch {
@@ -10,6 +13,7 @@ export interface DefinitionBatch {
   events?: readonly EventDefinition[];
   reactions?: readonly ReactionDefinition[];
   missions?: readonly MissionDefinition[];
+  compositions?: readonly CompositionDefinition[];
 }
 export interface DefinitionCatalog {
   readonly characters: Readonly<Record<string, ObjectDefinition>>;
@@ -18,6 +22,7 @@ export interface DefinitionCatalog {
   readonly events: Readonly<Record<string, EventDefinition>>;
   readonly reactions: Readonly<Record<string, ReactionDefinition>>;
   readonly missions: Readonly<Record<string, MissionDefinition>>;
+  readonly compositions: Readonly<Record<string, CompositionDefinition>>;
 }
 type Data = Record<string, unknown>;
 function check(ok: unknown, message: string): asserts ok { if (!ok) throw new Error(`Invalid definitions: ${message}`); }
@@ -95,11 +100,66 @@ export function validateInteractions(raw: unknown, catalog: DefinitionCatalog): 
     if (binding.context !== undefined) member(object(binding.context).offer, ['target']);
   }
 }
-export function validateOffer(raw: unknown, catalog: DefinitionCatalog, concrete: boolean): void {
+function offerContent(raw: unknown, catalog: DefinitionCatalog): Data {
   const offer = object(raw);
   ref(catalog.missions, offer.mission); ref(catalog.characters, offer.target); text(offer.name); validatePosition(offer.spawn);
+  return offer;
+}
+export function validateOffer(raw: unknown, catalog: DefinitionCatalog, concrete: boolean): void {
+  const offer = offerContent(raw, catalog);
   if (concrete) text(offer.opponentId);
   else ref(catalog.factions, offer.opponent);
+}
+function validateComposition(definition: CompositionDefinition, catalog: DefinitionCatalog): void {
+  for (const key of Object.keys(definition)) check(['id', 'characters', 'factions', 'relations', 'parameters', 'roles'].includes(key), `unknown composition field: ${key}`);
+  const parameters = object(definition.parameters ?? {});
+  const roles = object(definition.roles ?? {});
+  const symbols = new Map<string, WorldInstance['kind']>([['self', 'composition']]);
+  for (const [key, raw] of Object.entries(parameters)) { validateName(key); member(object(raw).kind, instanceKinds); }
+  for (const [key, raw] of Object.entries(roles)) {
+    validateName(key); const role = object(raw); member(role.kind, instanceKinds);
+    if (role.allowVacant !== undefined) boolean(role.allowVacant);
+    check(role.allowVacant !== false || role.initial !== undefined, `role ${key} requires an initial occupant`);
+  }
+  for (const [category, kind] of [['factions', 'faction'], ['characters', 'character'], ['relations', 'relation']] as const) {
+    for (const raw of list(definition[category] ?? [])) {
+      const item = object(raw);
+      if (category === 'relations' && item.key === undefined) continue;
+      validateName(item.key); check(!symbols.has(item.key), `duplicate composition symbol: ${item.key}`);
+      symbols.set(item.key, kind);
+    }
+  }
+  const referenceKind = (raw: unknown): WorldInstance['kind'] | undefined => {
+    if (raw && typeof raw === 'object' && Object.hasOwn(raw, 'parameter')) {
+      const parameter = object(raw); check(Object.keys(parameter).length === 1, 'invalid parameter reference');
+      validateName(parameter.parameter); ref(parameters, parameter.parameter);
+      return object(parameters[parameter.parameter]).kind as WorldInstance['kind'];
+    }
+    const reference = parseReference(raw as ReferenceInput);
+    if (reference.type === 'instance' || reference.scope !== undefined) return undefined; // Contextual, not a definition lookup.
+    if (reference.type === 'symbol') { check(symbols.has(reference.key), `missing local symbol: ${reference.key}`); return symbols.get(reference.key); }
+    ref(roles, reference.key); return object(roles[reference.key]).kind as WorldInstance['kind'];
+  };
+  const compatible = (raw: unknown, kinds: readonly string[]) => {
+    const kind = referenceKind(raw); if (kind !== undefined) check(kinds.includes(kind), `incompatible composition reference category: ${kind}`);
+  };
+  for (const item of definition.factions ?? []) ref(catalog.factions, item.definitionId);
+  for (const item of definition.characters ?? []) {
+    ref(catalog.characters, item.definitionId); validatePosition(item.position);
+    if (item.label !== undefined) check(typeof item.label === 'string', 'invalid label');
+    if (item.interactions !== undefined) validateInteractions(item.interactions, catalog);
+    if (item.faction !== undefined) compatible(item.faction, ['faction']);
+    check(!catalog.characters[item.definitionId].offer || item.offer !== undefined, 'composition member requires an explicit local offer');
+    if (item.offer !== undefined) { const offer = offerContent(item.offer, catalog); compatible(offer.opponent, ['faction']); }
+  }
+  for (const item of definition.relations ?? []) {
+    ref(catalog.relations, item.definitionId); number(item.intensity);
+    const relation = catalog.relations[item.definitionId];
+    compatible(item.source, relation.sourceKinds); compatible(item.target, relation.targetKinds);
+  }
+  for (const raw of Object.values(roles)) {
+    const role = object(raw); if (role.initial !== undefined) compatible(role.initial, [role.kind as string]);
+  }
 }
 function validate(catalog: DefinitionCatalog) {
   for (const definition of Object.values(catalog.characters)) {
@@ -115,7 +175,7 @@ function validate(catalog: DefinitionCatalog) {
     text(definition.name); boolean(definition.unique);
     for (const raw of [definition.sourceKinds, definition.targetKinds]) {
       const kinds = list(raw); check(kinds.length, 'empty relation categories');
-      for (const kind of kinds) member(kind, ['character', 'faction', 'mission', 'relation']);
+      for (const kind of kinds) member(kind, instanceKinds);
     }
     if (definition.intensity !== undefined) range(definition.intensity.min, definition.intensity.max);
     for (const id of list(definition.reactions)) ref(catalog.reactions, id);
@@ -142,8 +202,9 @@ function validate(catalog: DefinitionCatalog) {
     text(definition.name); member(definition.initialStatus, ['active']);
     for (const id of list(definition.reactions)) ref(catalog.events, id);
   }
+  for (const definition of Object.values(catalog.compositions)) validateComposition(definition, catalog);
 }
-const categories = ['characters', 'factions', 'relations', 'events', 'reactions', 'missions'] as const;
+const categories = ['characters', 'factions', 'relations', 'events', 'reactions', 'missions', 'compositions'] as const;
 function empty(): DefinitionCatalog { return Object.freeze(Object.fromEntries(categories.map(category => [category, Object.freeze(Object.create(null))])) as unknown as DefinitionCatalog); }
 
 export class DefinitionRegistry {

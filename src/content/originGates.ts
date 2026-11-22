@@ -32,7 +32,7 @@ definitions.register({
 export const scenarios: readonly ScenarioDefinition[] = scenarioData;
 export const events = definitions.catalog().events;
 
-/** Symbolic aliases belong to this content adapter, never to the engine. */
+/** Production scenario symbols stay here until migration to generic compositions. */
 export function createWorld(scenarioId: string, options: AuditOptions | AuditLog = {}) {
   const audit = options instanceof AuditLog ? options : new AuditLog(options);
   return audited(audit, { category: 'world', data: { scenarioId, source: 'originGatesAdapter' } }, scope => {
